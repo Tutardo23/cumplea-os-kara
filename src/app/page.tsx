@@ -21,57 +21,63 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center text-white p-4 font-sans">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white p-4 font-sans selection:bg-indigo-500/30">
+      <div className="absolute inset-0 z-[-1] overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-indigo-600/20 rounded-full blur-[100px]"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-purple-600/20 rounded-full blur-[100px]"></div>
+      </div>
+
+      <div className="w-full max-w-md z-10">
         <div className="text-center mb-12">
-          <Mic2 className="w-16 h-16 text-red-600 mx-auto mb-4" />
-          <h1 className="text-6xl font-bold tracking-tight mb-2 uppercase">
-            Karaoke <span className="text-red-600">Night</span>
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white/5 border border-white/10 mb-6 shadow-2xl shadow-indigo-500/20">
+            <Mic2 className="w-10 h-10 text-indigo-400" strokeWidth={1.5} />
+          </div>
+          <h1 className="text-5xl font-black tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
+            Karaoke VIP
           </h1>
-          <p className="text-zinc-500 font-bold uppercase tracking-widest">¿Host o Jugador?</p>
+          <p className="text-zinc-400 font-medium">¿Vas a crear la sala o vas a jugar?</p>
         </div>
 
-        <div className="space-y-8">
-          {/* SECCIÓN JUGADORES (CELULAR) */}
-          <div className="border-4 border-red-600 p-8 bg-zinc-900">
-            <div className="flex items-center justify-center gap-3 mb-6 text-red-600">
-              <Smartphone className="w-8 h-8" />
-              <h2 className="text-3xl font-bold uppercase">Unirse a Sala</h2>
+        <div className="space-y-6">
+          {/* SECCIÓN JUGADORES */}
+          <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-3xl shadow-xl">
+            <div className="flex items-center gap-3 mb-6">
+              <Smartphone className="w-6 h-6 text-purple-400" />
+              <h2 className="text-2xl font-bold">Unirse a una Sala</h2>
             </div>
             <form onSubmit={joinRoom} className="flex flex-col gap-4">
               <input
                 type="text"
                 value={roomCode}
                 onChange={(e) => setRoomCode(e.target.value)}
-                placeholder="EJ: KARA-1234"
-                className="bg-black border-2 border-zinc-700 p-4 text-2xl outline-none focus:border-red-600 text-white uppercase text-center font-bold tracking-widest placeholder:text-zinc-700 transition-colors"
+                placeholder="Ej: KARA-1234"
+                className="bg-black/40 border border-white/10 p-4 rounded-xl text-xl outline-none focus:border-purple-500 transition-colors text-white uppercase text-center font-bold tracking-widest placeholder:normal-case placeholder:tracking-normal placeholder:font-normal placeholder:text-zinc-600"
               />
               <button 
                 type="submit"
-                className="bg-red-600 text-white p-4 font-bold text-2xl uppercase hover:bg-red-700 transition-colors"
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-4 rounded-xl font-bold text-xl active:scale-95 transition-all shadow-lg shadow-purple-500/30"
               >
-                Entrar a Jugar
+                Entrar a jugar
               </button>
             </form>
           </div>
 
-          {/* SEPARADOR */}
           <div className="flex items-center gap-4 px-4">
-            <div className="h-1 bg-zinc-800 flex-1"></div>
-            <span className="text-zinc-600 font-bold uppercase text-xl">O</span>
-            <div className="h-1 bg-zinc-800 flex-1"></div>
+            <div className="h-px bg-white/10 flex-1"></div>
+            <span className="text-zinc-500 font-bold uppercase text-xs tracking-widest">Opción Host</span>
+            <div className="h-px bg-white/10 flex-1"></div>
           </div>
 
-          {/* SECCIÓN HOST (PANTALLA GIGANTE) */}
-          <div className="border-4 border-white p-8 bg-black text-center">
-             <div className="flex items-center justify-center gap-3 mb-6 text-white">
-              <Tv className="w-8 h-8" />
-              <h2 className="text-3xl font-bold uppercase">Crear Sala</h2>
+          {/* SECCIÓN HOST */}
+          <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-3xl shadow-xl text-center">
+             <div className="flex items-center justify-center gap-3 mb-4">
+              <Tv className="w-6 h-6 text-indigo-400" />
+              <h2 className="text-xl font-bold">Pantalla Gigante</h2>
             </div>
-            <p className="text-zinc-500 mb-6 font-bold uppercase text-sm tracking-widest">Inicia la pantalla gigante</p>
+            <p className="text-zinc-400 mb-6 text-sm">Creá la sala principal para mostrar en el televisor.</p>
             <button 
               onClick={createRoom}
-              className="w-full bg-white text-black p-4 font-bold text-2xl uppercase hover:bg-zinc-300 transition-colors"
+              className="w-full bg-white/10 hover:bg-white/20 border border-white/10 text-white p-4 rounded-xl font-bold text-lg active:scale-95 transition-all"
             >
               Iniciar Host
             </button>
