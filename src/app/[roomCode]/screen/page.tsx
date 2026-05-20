@@ -6,7 +6,7 @@ import { Mic2, Trophy, ChevronDown, Star, Ghost, ListOrdered, Settings, Trash2, 
 import YouTube from "react-youtube";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import confetti from 'canvas-commetti';
+import confetti from 'canvas-confetti';
 
 const ALL_SONGS_FALLBACK = [
   { id: "1", title: "Persia, Yo Se Que Tu, Millonario", artist: "El Rodri", youtubeId: "DPr-EkqFgJ4" },
@@ -35,7 +35,7 @@ const ALL_SONGS_FALLBACK = [
   { id: "24", title: "Andas En Mi Cabeza", artist: "Chino & Nacho, Daddy Yankee", youtubeId: "_bdXSot50kU" },
   { id: "25", title: "Nena", artist: "Marama", youtubeId: "Uqf5V67pd0I" },
   { id: "26", title: "Los Del Espacio", artist: "LIT killah, Duki", youtubeId: "emTC0FBpyeg" },
-  { id: "27", title: "Baby", artist: "Justin Bieber", youtubeId: "1a5SWpp9Wfg" },
+  { id: "27", title: "Baby",artist: "Justin Bieber", youtubeId: "1a5SWpp9Wfg" },
   { id: "28", title: "La Morocha", artist: "Luck Ra, BM", youtubeId: "SjIkoBNZOOQ" },
   { id: "29", title: "Quevedo: Bzrp Session", artist: "Bizarrap", youtubeId: "ymWTYk90NcU" },
   { id: "30", title: "Un Finde", artist: "Big One, Ke Personajes", youtubeId: "eY7H7_U0H0Q" },
@@ -43,6 +43,7 @@ const ALL_SONGS_FALLBACK = [
   { id: "32", title: "De Música Ligera", artist: "Soda Stereo", youtubeId: "X5iGNQN_Ijg" },
   { id: "33", title: "Tusa", artist: "Karol G", youtubeId: "zGL6g6_6GUM" },
   { id: "34", title: "La Bachata", artist: "Manuel Turizo", youtubeId: "tLPUmT6s8O8" },
+  { id: "35", title: "Ojitos Rojos", artist: "Ke Personajes x Grupo Frontera", youtubeId: "7aX_4M02AHA" }
 ];
 
 const TOURNAMENT_ROUNDS = [
@@ -51,12 +52,15 @@ const TOURNAMENT_ROUNDS = [
 ];
 
 const WHEEL_COLORS = ["#4f46e5", "#db2777", "#7c3aed", "#ea580c", "#059669"];
+// Si alguien es agregado a mano, le damos un robot random
+const FALLBACK_AVATARS = ["Felix", "Aneka", "Jude", "Loki", "Mimi", "Buster"]; 
 
 type ScoreEntry = { singers: string[]; actitud: number; ganas: number; voz: number; total: number; };
 
 export default function KaraokeRoulette() {
   const [step, setStep] = useState<"LOBBY" | "ADMIN" | "ROULETTE" | "VOTING" | "PLAYING" | "RATING" | "LEADERBOARD">("LOBBY");
   const [players, setPlayers] = useState<string[]>([]);
+  const [avatars, setAvatars] = useState<Record<string, string>>({}); 
   const [newPlayer, setNewPlayer] = useState("");
   
   const [currentRoundIdx, setCurrentRoundIdx] = useState(0);
@@ -88,7 +92,7 @@ export default function KaraokeRoulette() {
   const channelRef = useRef<any>(null);
   const votedPlayersRef = useRef<Set<string>>(new Set());
 
-  // 1. TRAER TEMAS DESDE LA BASE DE DATOS MAPEANDO CORRECTAMENTE EL YOUTUBEID
+  // 1. CARGA INTELIGENTE Y AUTO-REPARACIÓN
   useEffect(() => {
     const fetchSongs = async () => {
       try {
@@ -96,28 +100,32 @@ export default function KaraokeRoulette() {
         if (error) throw error;
         
         if (data && data.length > 0) {
-          const fixedData = data.map(song => ({
-            id: song.id,
-            title: song.title,
-            artist: song.artist,
-            youtubeId: song.youtubeid || ""
+          let fixedData = data.map(song => ({
+            id: song.id, title: song.title, artist: song.artist, youtubeId: song.youtubeid || song.youtubeId || ""
           }));
-          setMasterSongs(fixedData);
-          setAvailableSongs(fixedData);
+
+          const brokenSongsCount = fixedData.filter(s => !s.youtubeId || s.youtubeId.trim() === "").length;
+          
+          if (brokenSongsCount > 5) {
+              console.log("Base sucia. Auto-reparando...");
+              fixedData = [...ALL_SONGS_FALLBACK];
+              const songsToUpload = fixedData.map(song => ({
+                  id: song.id, title: song.title, artist: song.artist, youtubeid: song.youtubeId
+              }));
+              await supabase.from('karaoke_songs').upsert(songsToUpload);
+          }
+          setMasterSongs(fixedData); setAvailableSongs(fixedData);
         } else {
-          setMasterSongs(ALL_SONGS_FALLBACK);
-          setAvailableSongs(ALL_SONGS_FALLBACK);
+          setMasterSongs(ALL_SONGS_FALLBACK); setAvailableSongs(ALL_SONGS_FALLBACK);
         }
       } catch (err) {
-        console.error("Error al cargar canciones:", err);
-        setMasterSongs(ALL_SONGS_FALLBACK);
-        setAvailableSongs(ALL_SONGS_FALLBACK);
+        setMasterSongs(ALL_SONGS_FALLBACK); setAvailableSongs(ALL_SONGS_FALLBACK);
       }
     };
     fetchSongs();
   }, [step]);
 
-  // 2. REALTIME SYNC CELULARES
+  // 2. REALTIME SYNC
   useEffect(() => {
     if (!roomCode) return;
     const channel = supabase.channel(`room-${roomCode}`);
@@ -125,7 +133,11 @@ export default function KaraokeRoulette() {
     
     channel
       .on("broadcast", { event: "new_player" }, (data) => {
-        setPlayers((prev) => !prev.includes(data.payload.name) ? [...prev, data.payload.name] : prev);
+        const pName = data.payload.name;
+        setPlayers((prev) => !prev.includes(pName) ? [...prev, pName] : prev);
+        if (data.payload.avatar) {
+            setAvatars((prev) => ({ ...prev, [pName]: data.payload.avatar }));
+        }
       })
       .on("broadcast", { event: "vote" }, (data) => {
         if (data.payload.playerName && votedPlayersRef.current.has(data.payload.playerName)) return;
@@ -139,8 +151,7 @@ export default function KaraokeRoulette() {
       .on("broadcast", { event: "rate" }, (data) => {
         const cat = data.payload.category as "actitud" | "ganas" | "voz";
         setRatings((prev) => ({
-          ...prev,
-          [cat]: { sum: prev[cat].sum + data.payload.score, count: prev[cat].count + 1 }
+          ...prev, [cat]: { sum: prev[cat].sum + data.payload.score, count: prev[cat].count + 1 }
         }));
       })
       .subscribe((status) => {
@@ -149,7 +160,7 @@ export default function KaraokeRoulette() {
         }
       });
 
-    return () => { supabase.removeChannel(channel); channelRef.current = null; };
+    return () => { try { supabase.removeChannel(channel); } catch(e){} channelRef.current = null; };
   }, [roomCode, step]);
 
   useEffect(() => {
@@ -176,39 +187,26 @@ export default function KaraokeRoulette() {
     e.preventDefault();
     if (newPlayer.trim() && !players.includes(newPlayer)) {
       setPlayers((prev) => [...prev, newPlayer]);
+      setAvatars((prev) => ({ ...prev, [newPlayer]: FALLBACK_AVATARS[Math.floor(Math.random() * FALLBACK_AVATARS.length)] }));
       setNewPlayer("");
     }
   };
 
-  const removePlayer = (name: string) => {
-      setPlayers(players.filter(p => p !== name));
-  };
+  const removePlayer = (name: string) => { setPlayers(players.filter(p => p !== name)); };
 
   const handleUpdateSong = (id: string, field: string, value: string) => {
       setMasterSongs(masterSongs.map(song => song.id === id ? { ...song, [field]: value } : song));
   };
-  
   const handleAddSong = () => {
       setMasterSongs([{ id: Date.now().toString(), title: "Nueva Canción", artist: "Artista", youtubeId: "" }, ...masterSongs]);
   };
+  const handleDeleteSong = (id: string) => { setMasterSongs(masterSongs.filter(s => s.id !== id)); };
   
-  const handleDeleteSong = (id: string) => {
-      setMasterSongs(masterSongs.filter(s => s.id !== id));
-  };
-  
-  // GUARDADO COMPLETO MAPEADO EN MINÚSCULAS PARA LA BASE
   const saveAdminAndReturn = async () => {
       try {
-        const songsToUpload = masterSongs.map(song => ({
-            id: song.id,
-            title: song.title,
-            artist: song.artist,
-            youtubeid: song.youtubeId
-        }));
+        const songsToUpload = masterSongs.map(song => ({ id: song.id, title: song.title, artist: song.artist, youtubeid: song.youtubeId }));
         await supabase.from('karaoke_songs').upsert(songsToUpload);
-      } catch (err) {
-        console.error("No se pudo guardar en base de datos", err);
-      }
+      } catch (err) {}
       setAvailableSongs([...masterSongs]); 
       setStep("LOBBY");
   };
@@ -284,7 +282,7 @@ export default function KaraokeRoulette() {
         {step === "ADMIN" && (
            <motion.div key="admin" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-5xl bg-zinc-900/90 backdrop-blur-xl border border-white/20 p-8 rounded-3xl shadow-2xl relative z-10 max-h-[90vh] flex flex-col">
               <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-4xl font-black text-white">Editor de Canciones (Nube)</h2>
+                  <h2 className="text-4xl font-black text-white">Editor de Canciones</h2>
                   <div className="flex gap-4">
                       <button onClick={handleAddSong} className="bg-indigo-600 hover:bg-indigo-500 px-6 py-2 rounded-xl font-bold flex items-center gap-2"><Plus className="w-5 h-5"/> Agregar</button>
                       <button onClick={saveAdminAndReturn} className="bg-green-600 hover:bg-green-500 px-6 py-2 rounded-xl font-bold shadow-[0_0_15px_rgba(34,197,94,0.5)]">Guardar en la Nube y Volver</button>
@@ -296,7 +294,7 @@ export default function KaraokeRoulette() {
                       <div key={song.id} className="flex gap-4 items-center bg-black/40 p-4 rounded-2xl border border-white/10">
                           <input value={song.title} onChange={(e) => handleUpdateSong(song.id, 'title', e.target.value)} placeholder="Título" className="flex-[2] bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:border-indigo-500" />
                           <input value={song.artist} onChange={(e) => handleUpdateSong(song.id, 'artist', e.target.value)} placeholder="Artista" className="flex-[1.5] bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:border-indigo-500" />
-                          <input value={song.youtubeId} onChange={(e) => handleUpdateSong(song.id, 'youtubeId', e.target.value)} placeholder="ID YouTube" className="flex-[1.5] bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-indigo-300 font-mono outline-none focus:border-indigo-500" />
+                          <input value={song.youtubeId || ""} onChange={(e) => handleUpdateSong(song.id, 'youtubeId', e.target.value)} placeholder="ID YouTube" className="flex-[1.5] bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-indigo-300 font-mono outline-none focus:border-indigo-500" />
                           
                           <button onClick={() => { if(song.youtubeId) setPreviewVideoId(song.youtubeId) }} className="p-3 bg-blue-900/40 hover:bg-blue-600 text-blue-400 hover:text-white rounded-lg transition-colors" title="Probar Video">
                             <PlayCircle className="w-5 h-5"/>
@@ -357,8 +355,8 @@ export default function KaraokeRoulette() {
                   type="text"
                   value={newPlayer}
                   onChange={(e) => setNewPlayer(e.target.value)}
-                  placeholder="Añadir cantante..."
-                  className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-xl outline-none focus:border-indigo-500 text-white transition-all shadow-inner"
+                  placeholder="Añadir cantante manual..."
+                  className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-6 py-4 text-xl outline-none focus:border-indigo-500 text-white transition-all shadow-inner uppercase tracking-widest font-bold"
                 />
                 <button type="submit" className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-10 rounded-2xl font-black text-3xl hover:scale-105 transition-transform shadow-lg">
                   +
@@ -369,8 +367,13 @@ export default function KaraokeRoulette() {
                 <AnimatePresence>
                   {players.map((p, i) => (
                     <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ scale: 0 }} key={i} className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2 flex items-center gap-3 group">
-                      <Mic2 className="w-5 h-5 text-indigo-400" />
-                      <span className="font-bold text-xl">{p}</span>
+                      
+                      {/* ACÁ SE RENDERIZA EL ROBOT DE LA PERSONA */}
+                      <div className="w-8 h-8 rounded-full overflow-hidden border border-white/20 bg-white/5">
+                        <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[p] || "Felix"}`} alt="avatar" className="w-full h-full" />
+                      </div>
+                      
+                      <span className="font-bold text-xl uppercase tracking-widest">{p}</span>
                       <button onClick={() => removePlayer(p)} className="ml-2 text-zinc-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-5 h-5"/></button>
                     </motion.div>
                   ))}
@@ -379,7 +382,7 @@ export default function KaraokeRoulette() {
             </div>
 
             {players.length >= 3 && (
-              <button onClick={startRoulette} className="w-full bg-white text-black py-6 rounded-[2rem] font-black text-3xl shadow-[0_0_40px_rgba(255,255,255,0.3)] hover:bg-zinc-200 hover:scale-[1.02] transition-all">
+              <button onClick={startRoulette} className="w-full bg-white text-black py-6 rounded-[2rem] font-black text-3xl shadow-[0_0_40px_rgba(255,255,255,0.3)] hover:bg-zinc-200 hover:scale-[1.02] transition-all tracking-widest">
                 ¡EMPEZAR SHOW!
               </button>
             )}
@@ -418,8 +421,16 @@ export default function KaraokeRoulette() {
           <motion.div key="roulette" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center w-full flex flex-col items-center relative z-10">
             <div className="mb-10 bg-black/50 px-10 py-5 rounded-full border border-white/10 backdrop-blur-md shadow-2xl">
                 <h3 className="text-indigo-300 font-bold tracking-widest uppercase text-sm mb-1">{currentRound.name} (Turno {currentTurn}/{currentRound.totalTurns})</h3>
-                <h2 className="text-4xl font-black text-white drop-shadow-lg">
-                {isSpinning ? "Girando Ruleta..." : `Seleccionado: ${currentSingers[0]}`}
+                <h2 className="text-4xl font-black text-white drop-shadow-lg flex items-center gap-4 justify-center">
+                   {isSpinning ? "Girando Ruleta..." : (
+                      <>
+                        Seleccionado: 
+                        <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/20">
+                           <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[currentSingers[0]] || "Felix"}`} className="w-full h-full object-cover bg-black/40"/>
+                        </div>
+                        <span className="uppercase">{currentSingers[0]}</span>
+                      </>
+                   )}
                 </h2>
             </div>
 
@@ -445,8 +456,11 @@ export default function KaraokeRoulette() {
                   const rotation = (i * slice) + (slice / 2);
                   return (
                     <div key={i} className="absolute w-full h-full" style={{ transform: `rotate(${rotation}deg)` }}>
-                      <div className="absolute top-0 left-1/2 -translate-x-1/2 pt-8 origin-bottom h-1/2">
-                        <span className="font-black text-4xl text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">{player}</span>
+                      <div className="absolute top-0 left-1/2 -translate-x-1/2 pt-8 origin-bottom h-1/2 flex flex-col items-center">
+                        <div className="w-12 h-12 mb-2 rounded-full border-2 border-black bg-white/10 shadow-lg p-1 overflow-hidden">
+                            <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[player] || "Felix"}`} className="w-full h-full"/>
+                        </div>
+                        <span className="font-black text-3xl text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] uppercase">{player}</span>
                       </div>
                     </div>
                   );
@@ -461,8 +475,15 @@ export default function KaraokeRoulette() {
               {showPartners && currentRound.type > 1 && (
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-indigo-950/80 backdrop-blur-xl border border-indigo-500/50 p-6 rounded-3xl shadow-2xl">
                   <p className="text-indigo-200 text-sm mb-2 font-bold uppercase tracking-widest">Acompañado por:</p>
-                  <div className="flex gap-6 justify-center text-4xl font-black text-white drop-shadow-md">
-                    {currentSingers.slice(1).map((partner, i) => (<span key={i}>{partner}</span>))}
+                  <div className="flex gap-6 justify-center text-4xl font-black text-white drop-shadow-md items-center">
+                    {currentSingers.slice(1).map((partner, i) => (
+                      <span key={i} className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full overflow-hidden border border-white/20">
+                           <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[partner] || "Felix"}`} className="w-full h-full object-cover bg-black/40"/>
+                        </div>
+                        <span className="uppercase">{partner}</span>
+                      </span>
+                    ))}
                   </div>
                 </motion.div>
               )}
@@ -513,7 +534,7 @@ export default function KaraokeRoulette() {
             <motion.div key="playing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 w-screen h-screen z-50 flex flex-col items-center justify-center bg-black p-6">
                 <div className="w-full max-w-7xl h-full flex flex-col">
                     <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">{currentSingers.join(" & ")}</h2>
+                        <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 uppercase tracking-widest">{currentSingers.join(" & ")}</h2>
                         <button onClick={() => setStep("RATING")} className="bg-white/10 hover:bg-white/20 border border-white/20 px-6 py-2 rounded-full font-bold text-white transition-all uppercase text-sm tracking-widest">
                             Pasar al Jurado
                         </button>
@@ -581,7 +602,16 @@ export default function KaraokeRoulette() {
                                  <tr key={i} className="hover:bg-white/5 transition-colors">
                                      <td className="p-8 font-bold text-2xl text-white flex items-center gap-4">
                                         {i === 0 && <Trophy className="w-8 h-8 text-yellow-500" />}
-                                        {entry.singers.join(" & ")}
+                                        
+                                        {/* AVATARES EN LA TABLA FINAL */}
+                                        <div className="flex -space-x-4">
+                                          {entry.singers.map((s, idx) => (
+                                              <div key={idx} className="w-12 h-12 rounded-full overflow-hidden border-2 border-zinc-800 bg-white/10" title={s}>
+                                                  <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[s] || "Felix"}`} className="w-full h-full object-cover" />
+                                              </div>
+                                          ))}
+                                        </div>
+                                        <span className="uppercase ml-4">{entry.singers.join(" & ")}</span>
                                      </td>
                                      <td className="p-8 text-center font-mono text-2xl text-zinc-300">{entry.actitud} <Star className="w-5 h-5 inline text-yellow-500 mb-1" fill="currentColor"/></td>
                                      <td className="p-8 text-center font-mono text-2xl text-zinc-300">{entry.ganas} <Star className="w-5 h-5 inline text-yellow-500 mb-1" fill="currentColor"/></td>
@@ -594,8 +624,8 @@ export default function KaraokeRoulette() {
                          </tbody>
                      </table>
                  </div>
-                 <button onClick={startRoulette} className="bg-white text-black py-6 px-16 rounded-[2rem] font-black text-3xl shadow-[0_0_40px_rgba(255,255,255,0.4)] hover:scale-105 transition-transform">
-                    {currentRoundIdx === TOURNAMENT_ROUNDS.length - 1 && currentTurn === currentRound.totalTurns ? "Finalizar Show" : "Siguiente Turno"}
+                 <button onClick={startRoulette} className="bg-white text-black py-6 px-16 rounded-[2rem] font-black text-3xl shadow-[0_0_40px_rgba(255,255,255,0.4)] hover:scale-105 transition-transform tracking-widest">
+                    {currentRoundIdx === TOURNAMENT_ROUNDS.length - 1 && currentTurn === currentRound.totalTurns ? "FINALIZAR SHOW" : "SIGUIENTE TURNO"}
                  </button>
             </motion.div>
         )}
