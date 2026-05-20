@@ -2,28 +2,33 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic2, Play, Users, Star, Trophy, ChevronDown, ListOrdered } from "lucide-react";
+import { Mic2, Play, Trophy, ChevronDown, ListOrdered, Star } from "lucide-react";
 import YouTube from "react-youtube";
 import { useParams } from "next/navigation";
-import { supabase } from "@/lib/supabase"; // Asegurate de que esta ruta apunte a tu archivo supabase.ts
+import { supabase } from "@/lib/supabase";
 
 const SONGS = [
   { id: "1", title: "Los Del Espacio", artist: "LIT killah, Duki, Emilia...", youtubeId: "emTC0FBpyeg" },
-  { id: "2", title: "De Música Ligera", artist: "Soda Stereo", youtubeId: "X5iGNQN_Ijg" },
+  { id: "2", title: "Baby", artist: "Justin Bieber ft. Ludacris", youtubeId: "1a5SWpp9Wfg" },
+  { id: "3", title: "La Morocha", artist: "Luck Ra, BM", youtubeId: "SjIkoBNZOOQ" },
+  { id: "4", title: "Quevedo: Bzrp Session, Vol. 52", artist: "Bizarrap, Quevedo", youtubeId: "ymWTYk90NcU" },
+  { id: "5", title: "Un Finde", artist: "Big One, FMK, Ke Personajes", youtubeId: "eY7H7_U0H0Q" },
+  { id: "6", title: "Danza Kuduro", artist: "Don Omar, Lucenzo", youtubeId: "QSWmgNMK-VM" },
+  { id: "7", title: "De Música Ligera", artist: "Soda Stereo", youtubeId: "X5iGNQN_Ijg" },
+  { id: "8", title: "Givenchy", artist: "Duki", youtubeId: "vbyrN_5vU-8" },
+  { id: "9", title: "Tusa", artist: "Karol G, Nicki Minaj", youtubeId: "zGL6g6_6GUM" },
+  { id: "10", title: "La Bachata", artist: "Manuel Turizo", youtubeId: "tLPUmT6s8O8" },
 ];
-
-const WHEEL_COLORS = ["#6366f1", "#ec4899", "#8b5cf6", "#f59e0b", "#10b981", "#3b82f6", "#f43f5e"];
-
 const TOURNAMENT_ROUNDS = [
-  { id: 1, name: "Ronda 1: Solistas", type: 1, totalTurns: 5 },
+  { id: 1, name: "Ronda 1: Solos", type: 1, totalTurns: 4 },
   { id: 2, name: "Ronda 2: Dúos", type: 2, totalTurns: 3 },
-  { id: 3, name: "Ronda 3: Tríos", type: 3, totalTurns: 2 },
 ];
 
-type ScoreEntry = { singers: string[]; actitud: number; ganas: number; voz: number; total: number; };
+const WHEEL_COLORS = ["#4f46e5", "#db2777", "#7c3aed", "#ea580c", "#059669"];
+
+type ScoreEntry = { singers: string[]; total: number; };
 
 export default function KaraokeRoulette() {
-  // 1. Estados
   const [step, setStep] = useState<"LOBBY" | "ROULETTE" | "VOTING" | "PLAYING" | "RATING" | "LEADERBOARD">("LOBBY");
   const [players, setPlayers] = useState<string[]>([]);
   const [newPlayer, setNewPlayer] = useState("");
@@ -35,19 +40,59 @@ export default function KaraokeRoulette() {
   
   const [votes, setVotes] = useState({ song1: 0, song2: 0 });
   const [winnerSong, setWinnerSong] = useState(SONGS[0]);
-  const [ratings, setRatings] = useState({ actitud: 0, ganas: 0, voz: 0 });
+  const [ratings, setRatings] = useState({ total: 0, count: 0 });
   
   const [wheelRotation, setWheelRotation] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
-  const [showPartners, setShowPartners] = useState(false);
 
   const currentRound = TOURNAMENT_ROUNDS[currentRoundIdx];
-
-  // 2. Parámetros de la URL
   const params = useParams();
   const roomCode = params.roomCode as string;
 
-  // 3. Funciones de Juego
+  // 1. Avisar a los celulares el estado actual
+  useEffect(() => {
+    if (!roomCode) return;
+    supabase.channel(`room-${roomCode}`).send({ 
+      type: "broadcast", event: "sync_step", payload: { step } 
+    });
+  }, [step, roomCode]);
+
+  // 2. RECIBIR EVENTOS (Arreglo definitivo: sin dependencias que reinicien la conexión)
+  useEffect(() => {
+    if (!roomCode) return;
+    const channel = supabase.channel(`room-${roomCode}`);
+    
+    channel
+      .on("broadcast", { event: "new_player" }, (data) => {
+        setPlayers((prev) => !prev.includes(data.payload.name) ? [...prev, data.payload.name] : prev);
+      })
+      .on("broadcast", { event: "vote" }, (data) => {
+        // Actualizamos estado funcionalmente para no tener Stale Closures
+        setVotes((prev) => {
+          const next = { ...prev };
+          data.payload.songNum === 1 ? next.song1++ : next.song2++;
+          return next;
+        });
+      })
+      .on("broadcast", { event: "rate" }, (data) => {
+        setRatings((prev) => ({
+          total: prev.total + data.payload.score,
+          count: prev.count + 1
+        }));
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [roomCode]); // <- Al estar vacío, NUNCA se desconecta al votar.
+
+  // 3. VIGILANTE DE VOTOS (Revisa los votos y cambia de pantalla)
+  useEffect(() => {
+    if (step === "VOTING" && (votes.song1 + votes.song2 >= 3)) { // 3 votos para ganar en la demo
+      setWinnerSong(votes.song1 > votes.song2 ? SONGS[0] : SONGS[1]);
+      setTimeout(() => setStep("PLAYING"), 1000);
+    }
+  }, [votes, step]);
+
   const handleAddPlayer = (e: React.FormEvent) => {
     e.preventDefault();
     if (newPlayer.trim() && !players.includes(newPlayer)) {
@@ -57,11 +102,13 @@ export default function KaraokeRoulette() {
   };
 
   const startRoulette = () => {
-    if (players.length < 3) return alert("¡Agregá al menos 3 personas!");
+    if (players.length < 3) return alert("¡Mínimo 3 jugadores!");
     setStep("ROULETTE");
     setIsSpinning(true);
-    setShowPartners(false);
-    setRatings({ actitud: 0, ganas: 0, voz: 0 });
+    
+    // Reset
+    setVotes({ song1: 0, song2: 0 });
+    setRatings({ total: 0, count: 0 });
 
     const shuffled = [...players].sort(() => 0.5 - Math.random());
     const selected = shuffled.slice(0, currentRound.type);
@@ -78,136 +125,67 @@ export default function KaraokeRoulette() {
 
   const onSpinComplete = () => {
     setIsSpinning(false);
-    if (currentRound.type > 1) {
-      setTimeout(() => setShowPartners(true), 500);
-      setTimeout(() => setStep("VOTING"), 4000);
-    } else {
-      setTimeout(() => setStep("VOTING"), 2500);
-    }
-  };
-
-  // Usamos el callback en setVotes para evitar problemas de sincronización con los celulares
-  const handleVote = (songNum: 1 | 2) => {
-    setVotes((prev) => {
-      const newVotes = { ...prev };
-      songNum === 1 ? newVotes.song1++ : newVotes.song2++;
-      
-      if (newVotes.song1 + newVotes.song2 >= 5) {
-        setWinnerSong(newVotes.song1 > newVotes.song2 ? SONGS[0] : SONGS[1]);
-        setStep("PLAYING");
-      }
-      return newVotes;
-    });
-  };
-
-  const handleRate = (category: keyof typeof ratings, score: number) => {
-    setRatings(prev => ({ ...prev, [category]: score }));
+    setTimeout(() => setStep("VOTING"), 2500);
   };
 
   const saveScoreAndContinue = () => {
-    if (ratings.actitud === 0 || ratings.ganas === 0 || ratings.voz === 0) {
-      return alert("Falta puntuar alguna categoría");
-    }
-    const total = ratings.actitud + ratings.ganas + ratings.voz;
-    setLeaderboard([...leaderboard, { singers: currentSingers, ...ratings, total }]);
+    if (ratings.count === 0) return alert("¡Nadie votó desde el celu!");
+    const finalScore = Math.round(ratings.total / ratings.count);
+    
+    setLeaderboard([...leaderboard, { singers: currentSingers, total: finalScore }]);
     
     if (currentTurn < currentRound.totalTurns) {
       setCurrentTurn(currentTurn + 1);
     } else if (currentRoundIdx < TOURNAMENT_ROUNDS.length - 1) {
       setCurrentRoundIdx(currentRoundIdx + 1);
       setCurrentTurn(1);
-    } else {
-      alert("¡Torneo Finalizado!");
     }
-    
-    setVotes({ song1: 0, song2: 0 });
     setStep("LEADERBOARD");
   };
 
-  // 4. Conexión en Tiempo Real con los Celulares
-  useEffect(() => {
-    if (!roomCode) return;
-
-    const channel = supabase.channel(`room-${roomCode}`);
-
-    channel
-      .on("broadcast", { event: "new_player" }, (data) => {
-        setPlayers((prev) => {
-          if (!prev.includes(data.payload.name)) {
-            return [...prev, data.payload.name];
-          }
-          return prev;
-        });
-      })
-      .on("broadcast", { event: "vote_song" }, (data) => {
-        handleVote(data.payload.songNum);
-      })
-      .on("broadcast", { event: "rate_singer" }, (data) => {
-        handleRate(data.payload.category as keyof typeof ratings, data.payload.score);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode]);
-
-  // 5. Interfaz Visual
   return (
-    <div className="relative min-h-screen text-white flex flex-col items-center justify-center p-4 font-sans overflow-hidden selection:bg-indigo-500/30">
-      
-      {/* VIDEO DE FONDO */}
-      <div className="absolute inset-0 z-[-1]">
-        <video 
-          autoPlay 
-          loop 
-          muted 
-          playsInline 
-          className="w-full h-full object-cover opacity-60"
-        >
-          <source src="https://cdn.pixabay.com/video/2020/02/20/32617-393282433_large.mp4" type="video/mp4" />
-        </video>
-        <div className="absolute inset-0 bg-zinc-950/70 backdrop-blur-[4px]"></div>
-      </div>
-
+    <div className="relative min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-4 font-sans selection:bg-indigo-500/30">
       <AnimatePresence mode="wait">
         
         {/* --- FASE 1: LOBBY --- */}
         {step === "LOBBY" && (
-          <motion.div key="lobby" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full max-w-md relative z-10">
-            <div className="text-center mb-8">
-              <h1 className="text-5xl font-bold tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 drop-shadow-lg">
-                Karaoke Night
-              </h1>
-              <p className="text-zinc-300 font-medium">Sala: {roomCode}</p>
+          <motion.div key="lobby" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="w-full max-w-4xl text-center">
+            <h1 className="text-7xl font-black mb-8 text-white drop-shadow-xl">
+              Matías&apos; Fest
+            </h1>
+            <div className="bg-white/10 backdrop-blur-md inline-block px-10 py-4 rounded-3xl border-2 border-white/20 shadow-xl mb-12">
+                <span className="text-2xl font-bold text-zinc-300">Sala: <strong className="text-indigo-400 text-3xl">{roomCode}</strong></span>
             </div>
 
-            <form onSubmit={handleAddPlayer} className="flex gap-2 mb-8">
-              <input
-                type="text"
-                value={newPlayer}
-                onChange={(e) => setNewPlayer(e.target.value)}
-                placeholder="Ingresar manual..."
-                className="flex-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-4 py-3 outline-none focus:border-indigo-400 transition-colors text-white placeholder:text-zinc-400 shadow-xl"
-              />
-              <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 px-6 rounded-xl font-bold text-xl shadow-lg shadow-indigo-500/30 transition-all">+</button>
-            </form>
-
-            <div className="space-y-2 mb-8 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
-              <AnimatePresence>
-                {players.map((p, i) => (
-                  <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} key={i} className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-3 flex items-center gap-3 shadow-lg">
-                    <Users className="w-4 h-4 text-indigo-300" />
-                    <span className="font-semibold">{p}</span>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+            <div className="bg-white/5 backdrop-blur-xl border-2 border-white/10 p-10 rounded-[2rem] shadow-2xl mb-10">
+              <form onSubmit={handleAddPlayer} className="flex gap-4 mb-10">
+                <input
+                  type="text"
+                  value={newPlayer}
+                  onChange={(e) => setNewPlayer(e.target.value)}
+                  placeholder="Agregar jugador..."
+                  className="flex-1 bg-black/40 border-2 border-white/20 rounded-2xl px-6 py-4 text-2xl outline-none focus:border-indigo-500 text-white transition-all"
+                />
+                <button type="submit" className="bg-white text-black px-10 rounded-2xl font-black text-3xl hover:bg-zinc-200 transition-colors">
+                  +
+                </button>
+              </form>
+              
+              <div className="flex flex-wrap justify-center gap-4">
+                <AnimatePresence>
+                  {players.map((p, i) => (
+                    <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} key={i} className="bg-white/10 border border-white/20 rounded-2xl px-6 py-3 flex items-center gap-3">
+                      <Mic2 className="w-6 h-6 text-indigo-400" />
+                      <span className="font-bold text-2xl">{p}</span>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
             </div>
 
             {players.length >= 3 && (
-              <button onClick={startRoulette} className="w-full bg-white text-black py-4 rounded-xl font-bold text-lg hover:bg-zinc-200 transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.3)]">
-                <Play className="w-5 h-5" fill="currentColor" /> Empezar Torneo
+              <button onClick={startRoulette} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-6 rounded-3xl font-black text-3xl shadow-xl transition-colors">
+                ¡EMPEZAR EL JUEGO!
               </button>
             )}
           </motion.div>
@@ -215,22 +193,20 @@ export default function KaraokeRoulette() {
 
         {/* --- FASE 2: RULETA --- */}
         {step === "ROULETTE" && (
-          <motion.div key="roulette" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center w-full max-w-md flex flex-col items-center relative z-10">
-            <div className="mb-8 bg-black/40 px-6 py-3 rounded-2xl backdrop-blur-md border border-white/10">
-              <h3 className="text-indigo-300 font-bold tracking-widest uppercase text-sm mb-1">{currentRound.name} (Turno {currentTurn}/{currentRound.totalTurns})</h3>
-              <h2 className="text-3xl font-bold drop-shadow-lg">
-                {isSpinning ? "Girando..." : currentRound.type === 1 ? `¡Canta ${currentSingers[0]}!` : `Capitán: ${currentSingers[0]}`}
-              </h2>
-            </div>
+          <motion.div key="roulette" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center w-full flex flex-col items-center">
+            <h2 className="text-5xl font-black mb-12 text-white bg-white/10 px-10 py-4 rounded-3xl border border-white/20 backdrop-blur-md">
+              {isSpinning ? "Girando..." : `¡LE TOCA A: ${currentSingers.join(" & ")}!`}
+            </h2>
 
-            <div className="relative w-80 h-80 mb-12">
-              <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]">
-                <ChevronDown className="w-14 h-14" fill="currentColor" />
+            <div className="relative w-[500px] h-[500px] mb-12">
+              <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20 text-white drop-shadow-xl">
+                <ChevronDown className="w-28 h-28" fill="currentColor" />
               </div>
+              
               <motion.div
-                className="w-full h-full rounded-full border-[6px] border-white/30 shadow-[0_0_50px_rgba(99,102,241,0.5)] overflow-hidden relative backdrop-blur-sm"
+                className="w-full h-full rounded-full border-[12px] border-white/20 shadow-2xl overflow-hidden relative"
                 animate={{ rotate: wheelRotation }}
-                transition={{ duration: 5, ease: [0.2, 0.8, 0.1, 1] }}
+                transition={{ duration: 5, ease: [0.1, 0.9, 0.2, 1] }}
                 onAnimationComplete={onSpinComplete}
                 style={{
                   background: `conic-gradient(${players.map((_, i) => {
@@ -244,152 +220,119 @@ export default function KaraokeRoulette() {
                   const rotation = (i * slice) + (slice / 2);
                   return (
                     <div key={i} className="absolute w-full h-full" style={{ transform: `rotate(${rotation}deg)` }}>
-                      <div className="absolute top-0 left-1/2 -translate-x-1/2 pt-4 origin-bottom h-1/2 font-black text-xl drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] whitespace-nowrap">{player}</div>
+                      <div className="absolute top-0 left-1/2 -translate-x-1/2 pt-8 origin-bottom h-1/2">
+                        <span className="font-black text-4xl text-white drop-shadow-lg">{player}</span>
+                      </div>
                     </div>
                   );
                 })}
               </motion.div>
+              <div className="absolute inset-[180px] rounded-full bg-slate-950 border-[8px] border-white/20 z-10"></div>
             </div>
-
-            <AnimatePresence>
-              {showPartners && currentRound.type > 1 && (
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-indigo-900/60 backdrop-blur-lg border border-indigo-500/50 p-5 rounded-2xl shadow-2xl">
-                  <p className="text-indigo-200 text-sm mb-2 font-medium">Acompañado por:</p>
-                  <div className="flex gap-4 justify-center text-2xl font-black drop-shadow-md">
-                    {currentSingers.slice(1).map((partner, i) => (
-                      <span key={i} className="text-white">{partner}</span>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </motion.div>
         )}
 
-        {/* --- FASE 3: VOTACIÓN --- */}
+        {/* --- FASE 3: VOTACIÓN (TARJETAS CLARAS Y BORDES GRUESOS) --- */}
         {step === "VOTING" && (
-          <motion.div key="voting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-2xl text-center relative z-10">
-            <div className="bg-black/40 inline-block px-8 py-4 rounded-3xl backdrop-blur-md border border-white/10 mb-8">
-              <h2 className="text-4xl font-bold mb-2">¿Qué cantan?</h2>
-              <p className="text-indigo-300 font-medium text-xl">{currentSingers.join(" + ")}</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+           <motion.div key="voting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-6xl text-center">
+            <h2 className="text-6xl font-black mb-12 text-white">¿Qué van a cantar?</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
               {[1, 2].map((num) => {
                 const song = SONGS[num - 1];
                 const songVotes = num === 1 ? votes.song1 : votes.song2;
+                
                 return (
-                  <motion.button key={num} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} onClick={() => handleVote(num as 1 | 2)} className="relative overflow-hidden bg-white/10 backdrop-blur-md border border-white/20 rounded-3xl p-8 text-left hover:border-indigo-400 group cursor-pointer shadow-2xl">
-                    <div className="relative z-10">
-                      <h3 className="text-2xl font-bold mb-1">{song.title}</h3>
-                      <p className="text-zinc-300 mb-6">{song.artist}</p>
-                      <div className="flex justify-between items-center font-mono bg-black/30 p-3 rounded-xl border border-white/5">
-                        <span className="text-zinc-400">Votos</span>
-                        <span className="text-4xl font-black text-indigo-400 drop-shadow-md">{songVotes}</span>
+                  <div key={num} className="relative overflow-hidden bg-white/10 backdrop-blur-xl border-4 border-white/30 rounded-[3rem] p-12 text-left shadow-2xl">
+                    <div className="relative z-10 flex flex-col h-full">
+                      <h3 className="text-5xl font-black mb-4 text-white">{song.title}</h3>
+                      <p className="text-3xl text-zinc-300 mb-16 font-bold">{song.artist}</p>
+                      
+                      <div className="mt-auto flex justify-between items-end bg-black/40 p-8 rounded-3xl border-2 border-white/10">
+                        <span className="text-zinc-400 font-bold text-2xl uppercase tracking-widest">Votos</span>
+                        <span className="text-8xl font-black text-indigo-400 leading-none">{songVotes}</span>
                       </div>
                     </div>
-                    <motion.div className="absolute bottom-0 left-0 h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 transition-all duration-300" initial={{ width: 0 }} animate={{ width: `${(songVotes / 5) * 100}%` }} />
-                  </motion.button>
+                    {/* Barra de progreso bien visible */}
+                    <motion.div className="absolute bottom-0 left-0 h-4 bg-indigo-500" initial={{ width: 0 }} animate={{ width: `${(songVotes / 3) * 100}%` }} />
+                  </div>
                 );
               })}
             </div>
+            <p className="mt-10 text-2xl text-zinc-500 font-medium">Esperando que voten desde los celulares...</p>
           </motion.div>
         )}
 
-        {/* --- FASE 4: SHOW YOUTUBE --- */}
+        {/* --- FASE 4: YOUTUBE --- */}
         {step === "PLAYING" && (
-          <motion.div key="playing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-5xl text-center relative z-10">
-            <div className="bg-black/50 inline-block px-8 py-3 rounded-2xl backdrop-blur-md border border-white/10 mb-6">
-              <h2 className="text-3xl font-bold text-white drop-shadow-lg">{currentSingers.join(" & ")}</h2>
-            </div>
-            <div className="aspect-video w-full rounded-3xl overflow-hidden border border-white/20 shadow-[0_0_80px_rgba(0,0,0,0.8)] bg-black mb-8 relative">
-              <YouTube 
-                videoId={winnerSong.youtubeId} 
-                opts={{ width: '100%', height: '100%', playerVars: { autoplay: 1, controls: 1 } }}
-                className="absolute inset-0 w-full h-full"
-                onEnd={() => setStep("RATING")}
-              />
-            </div>
-            <button onClick={() => setStep("RATING")} className="bg-white/10 hover:bg-white/20 border border-white/20 px-6 py-2 rounded-full backdrop-blur-md transition-all">
-              Terminar y puntuar
-            </button>
-          </motion.div>
-        )}
-
-        {/* --- FASE 5: JURADO MULTI-CATEGORÍA --- */}
-        {step === "RATING" && (
-          <motion.div key="rating" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md bg-white/10 border border-white/20 p-8 rounded-3xl backdrop-blur-xl shadow-2xl relative z-10">
-            <h2 className="text-4xl font-bold mb-2 text-center drop-shadow-md">¡A Votar!</h2>
-            <p className="text-indigo-300 mb-8 text-center font-medium text-lg">{currentSingers.join(" & ")}</p>
-
-            <div className="space-y-6 mb-10">
-              {[
-                { key: "actitud", label: "Actitud en Escenario" },
-                { key: "ganas", label: "Ganas / Energía" },
-                { key: "voz", label: "Afinación / Voz" }
-              ].map((cat) => (
-                <div key={cat.key} className="flex flex-col items-center bg-black/40 p-5 rounded-2xl border border-white/5">
-                  <span className="text-sm text-zinc-300 mb-3 font-bold tracking-widest uppercase">{cat.label}</span>
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <motion.button
-                        key={star}
-                        whileHover={{ scale: 1.2 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => handleRate(cat.key as any, star)}
-                        className={`${ratings[cat.key as keyof typeof ratings] >= star ? "text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.6)]" : "text-white/20"} transition-all`}
-                      >
-                        <Star className="w-10 h-10" strokeWidth={1.5} fill="currentColor" />
-                      </motion.button>
-                    ))}
-                  </div>
+            <motion.div key="playing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 w-screen h-screen z-50 flex flex-col items-center justify-center bg-black p-6">
+                <div className="w-full max-w-7xl h-full flex flex-col">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-5xl font-black text-white">{currentSingers.join(" & ")}</h2>
+                        <button onClick={() => setStep("RATING")} className="bg-white/10 hover:bg-white/20 border-2 border-white/20 px-8 py-3 rounded-full font-bold text-xl text-white transition-all">
+                            Pasar al Jurado
+                        </button>
+                    </div>
+                    <div className="flex-1 w-full rounded-[2rem] overflow-hidden border-4 border-white/20 shadow-2xl bg-black relative">
+                        <YouTube videoId={winnerSong.youtubeId} opts={{ width: '100%', height: '100%', playerVars: { autoplay: 1 } }} className="absolute inset-0 w-full h-full" onEnd={() => setStep("RATING")}/>
+                    </div>
                 </div>
-              ))}
-            </div>
-
-            <button onClick={saveScoreAndContinue} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white py-4 rounded-xl font-bold text-lg transition-all shadow-[0_0_30px_rgba(99,102,241,0.4)]">
-              Guardar Puntaje
-            </button>
-          </motion.div>
+            </motion.div>
         )}
 
-        {/* --- FASE 6: TABLA DE POSICIONES --- */}
+        {/* --- FASE 5: JURADO --- */}
+        {step === "RATING" && (
+             <motion.div key="rating" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-2xl bg-white/10 backdrop-blur-xl border-4 border-white/20 p-16 rounded-[3rem] shadow-2xl text-center">
+                <h2 className="text-6xl font-black mb-8 text-white">¡Momento de Votar!</h2>
+                <p className="text-3xl text-zinc-300 mb-12">Pongan puntaje en sus celulares</p>
+                
+                <div className="bg-black/40 border-2 border-white/10 p-10 rounded-3xl mb-12">
+                    <div className="flex gap-4 justify-center">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star key={star} className={`w-20 h-20 ${Math.round(ratings.count > 0 ? ratings.total / ratings.count : 0) >= star ? "text-yellow-400" : "text-white/10"}`} fill="currentColor" />
+                      ))}
+                    </div>
+                    <p className="mt-8 text-zinc-400 font-bold text-2xl uppercase tracking-widest">{ratings.count} votos recibidos</p>
+                </div>
+
+                <button onClick={saveScoreAndContinue} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-6 rounded-2xl font-black text-4xl transition-colors">
+                    Siguiente Ronda
+                </button>
+             </motion.div>
+        )}
+
+        {/* --- FASE 6: TABLA --- */}
         {step === "LEADERBOARD" && (
-          <motion.div key="leaderboard" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-4xl relative z-10">
-            <div className="bg-black/50 inline-flex items-center gap-4 px-8 py-4 rounded-3xl backdrop-blur-md border border-white/10 mb-8 mx-auto flex justify-center w-max">
-              <ListOrdered className="w-8 h-8 text-indigo-400" />
-              <h2 className="text-4xl font-bold">Ranking General</h2>
-            </div>
-
-            <div className="bg-white/10 border border-white/20 rounded-3xl overflow-hidden backdrop-blur-xl mb-8 shadow-2xl">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-black/60 text-indigo-200 text-sm uppercase tracking-widest">
-                    <th className="p-5 font-bold">Cantantes</th>
-                    <th className="p-5 text-center font-bold">Actitud</th>
-                    <th className="p-5 text-center font-bold">Ganas</th>
-                    <th className="p-5 text-center font-bold">Voz</th>
-                    <th className="p-5 text-center font-black text-white">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {[...leaderboard].sort((a, b) => b.total - a.total).map((entry, i) => (
-                    <tr key={i} className="hover:bg-white/5 transition-colors group">
-                      <td className="p-5 font-bold text-lg">{entry.singers.join(" & ")}</td>
-                      <td className="p-5 text-center text-zinc-300 font-mono text-lg">{entry.actitud} <Star className="w-4 h-4 inline text-yellow-500 mb-1" fill="currentColor"/></td>
-                      <td className="p-5 text-center text-zinc-300 font-mono text-lg">{entry.ganas} <Star className="w-4 h-4 inline text-yellow-500 mb-1" fill="currentColor"/></td>
-                      <td className="p-5 text-center text-zinc-300 font-mono text-lg">{entry.voz} <Star className="w-4 h-4 inline text-yellow-500 mb-1" fill="currentColor"/></td>
-                      <td className="p-5 text-center font-black text-3xl text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 group-hover:scale-110 transition-transform">{entry.total}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <button onClick={startRoulette} className="w-full max-w-md mx-auto block bg-white text-black py-4 rounded-xl font-bold text-xl hover:bg-zinc-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.3)]">
-              Siguiente Turno
-            </button>
-          </motion.div>
+            <motion.div key="leaderboard" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-5xl text-center">
+                 <div className="bg-white/10 backdrop-blur-md inline-flex items-center gap-6 px-12 py-6 rounded-full border-2 border-white/20 mb-12 shadow-xl">
+                    <Trophy className="w-12 h-12 text-yellow-400" />
+                    <h2 className="text-6xl font-black text-white">Ranking Final</h2>
+                 </div>
+                 
+                 <div className="bg-white/5 backdrop-blur-xl rounded-[3rem] border-4 border-white/10 overflow-hidden mb-12 shadow-2xl">
+                     <table className="w-full text-left">
+                         <thead>
+                             <tr className="bg-black/60 text-zinc-300 text-2xl uppercase tracking-widest">
+                                 <th className="p-10 font-bold">Cantantes</th>
+                                 <th className="p-10 text-center font-bold">Puntaje</th>
+                             </tr>
+                         </thead>
+                         <tbody className="divide-y divide-white/10">
+                             {[...leaderboard].sort((a,b) => b.total - a.total).map((entry, i) => (
+                                 <tr key={i} className="hover:bg-white/5 transition-colors">
+                                     <td className="p-10 font-bold text-4xl text-white">{entry.singers.join(" & ")}</td>
+                                     <td className="p-10 text-center font-black text-6xl text-yellow-400 flex items-center justify-center gap-4">
+                                         {entry.total} <Star className="w-10 h-10 text-yellow-400" fill="currentColor"/>
+                                     </td>
+                                 </tr>
+                             ))}
+                         </tbody>
+                     </table>
+                 </div>
+                 <button onClick={startRoulette} className="bg-white text-black py-8 px-20 rounded-full font-black text-4xl shadow-2xl hover:bg-zinc-200 transition-colors">
+                    Siguiente Turno
+                 </button>
+            </motion.div>
         )}
       </AnimatePresence>
     </div>
