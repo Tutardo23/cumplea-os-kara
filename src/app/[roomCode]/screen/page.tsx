@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic2, Trophy, ChevronDown, Star, Sparkles, Ghost, Flame, Music, ListOrdered } from "lucide-react";
+import { Mic2, Trophy, ChevronDown, Star, Ghost, ListOrdered } from "lucide-react";
 import YouTube from "react-youtube";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import confetti from 'canvas-confetti';
 
 const SONGS = [
-  { id: "1", title: "Los Del Espacio", artist: "LIT killah, Duki", youtubeId: "emTC0FBpyeg" },
+  { id: "1", title: "Los Del Espacio", artist: "LIT killah, Duki, Emilia", youtubeId: "emTC0FBpyeg" },
   { id: "2", title: "Baby", artist: "Justin Bieber ft. Ludacris", youtubeId: "1a5SWpp9Wfg" },
   { id: "3", title: "La Morocha", artist: "Luck Ra, BM", youtubeId: "SjIkoBNZOOQ" },
   { id: "4", title: "Quevedo: Bzrp Session, Vol. 52", artist: "Bizarrap, Quevedo", youtubeId: "ymWTYk90NcU" },
@@ -40,10 +40,13 @@ export default function KaraokeRoulette() {
   const [currentSingers, setCurrentSingers] = useState<string[]>([]);
   const [leaderboard, setLeaderboard] = useState<ScoreEntry[]>([]);
   
+  // NUEVO: SISTEMA DE CARTAS SIN REPETIR
+  const [availableSongs, setAvailableSongs] = useState([...SONGS]);
+  const [currentOptions, setCurrentOptions] = useState<typeof SONGS>([]);
+
   const [votes, setVotes] = useState({ song1: 0, song2: 0 });
   const [winnerSong, setWinnerSong] = useState(SONGS[0]);
   
-  // RATING: Soportamos las 3 categorías. Guardamos la suma total y cuánta gente votó en cada una.
   const [ratings, setRatings] = useState({ 
     actitud: { sum: 0, count: 0 }, 
     ganas: { sum: 0, count: 0 }, 
@@ -58,7 +61,6 @@ export default function KaraokeRoulette() {
   const params = useParams();
   const roomCode = params.roomCode as string;
 
-  // Refs para mantener lógica viva sin reconectar sockets
   const channelRef = useRef<any>(null);
   const votedPlayersRef = useRef<Set<string>>(new Set());
 
@@ -102,7 +104,6 @@ export default function KaraokeRoulette() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode]);
 
-  // Sincronizar estado con los celulares sin romper conexión
   useEffect(() => {
     if (channelRef.current && step) {
       try { channelRef.current.send({ type: "broadcast", event: "sync_step", payload: { step } }); } 
@@ -110,15 +111,16 @@ export default function KaraokeRoulette() {
     }
   }, [step]);
 
-  // Vigilante de Votos Dinámico (Mitad + 1)
   const requiredVotes = Math.floor(players.length / 2) + 1;
+  
+  // ACA DEFINIMOS LA CANCIÓN GANADORA BASADO EN LAS OPCIONES DINÁMICAS
   useEffect(() => {
     const totalVotes = votes.song1 + votes.song2;
-    if (step === "VOTING" && totalVotes >= requiredVotes) {
-      setWinnerSong(votes.song1 > votes.song2 ? SONGS[0] : SONGS[1]);
+    if (step === "VOTING" && totalVotes >= requiredVotes && currentOptions.length === 2) {
+      setWinnerSong(votes.song1 > votes.song2 ? currentOptions[0] : currentOptions[1]);
       setTimeout(() => setStep("PLAYING"), 1000);
     }
-  }, [votes, step, requiredVotes]);
+  }, [votes, step, requiredVotes, currentOptions]);
 
   const handleAddPlayer = (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,6 +159,21 @@ export default function KaraokeRoulette() {
 
   const onSpinComplete = () => {
     setIsSpinning(false);
+
+    // SISTEMA DE CARTAS: Elegir 2 al azar y sacarlas del mazo
+    let pool = [...availableSongs];
+    
+    // Si nos quedamos sin temas, recargamos el mazo con todos los temas
+    if (pool.length < 2) {
+        pool = [...SONGS];
+    }
+
+    const shuffledSongs = pool.sort(() => 0.5 - Math.random());
+    const optionsForThisTurn = shuffledSongs.slice(0, 2);
+    
+    setCurrentOptions(optionsForThisTurn);
+    setAvailableSongs(shuffledSongs.slice(2)); // Guardamos el resto para la próxima
+
     if (currentRound.type > 1) {
       setTimeout(() => setShowPartners(true), 500);
       setTimeout(() => setStep("VOTING"), 3500);
@@ -166,7 +183,6 @@ export default function KaraokeRoulette() {
   };
 
   const saveScoreAndContinue = () => {
-    // Calcular promedios de cada categoría
     const avgActitud = ratings.actitud.count > 0 ? Math.round(ratings.actitud.sum / ratings.actitud.count) : 0;
     const avgGanas = ratings.ganas.count > 0 ? Math.round(ratings.ganas.sum / ratings.ganas.count) : 0;
     const avgVoz = ratings.voz.count > 0 ? Math.round(ratings.voz.sum / ratings.voz.count) : 0;
@@ -308,17 +324,17 @@ export default function KaraokeRoulette() {
           </motion.div>
         )}
 
-        {/* --- FASE 3: VOTACIÓN DINÁMICA --- */}
+        {/* --- FASE 3: VOTACIÓN DINÁMICA DE VERDAD --- */}
         {step === "VOTING" && (
            <motion.div key="voting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-5xl text-center relative z-10">
             <h2 className="text-6xl font-black mb-4 text-white">¿Qué van a cantar?</h2>
             <div className="bg-black/50 inline-block px-6 py-2 rounded-full border border-white/10 mb-10">
-                <span className="text-zinc-300 font-bold uppercase tracking-widest text-sm">Se necesitan {requiredVotes} votos (Mitad + 1) para avanzar</span>
+                <span className="text-zinc-300 font-bold uppercase tracking-widest text-sm">Se necesitan {requiredVotes} votos para avanzar</span>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {[1, 2].map((num) => {
-                const song = SONGS[num - 1];
+              {currentOptions.map((song, index) => {
+                const num = index + 1;
                 const songVotes = num === 1 ? votes.song1 : votes.song2;
                 
                 return (
@@ -358,7 +374,7 @@ export default function KaraokeRoulette() {
             </motion.div>
         )}
 
-        {/* --- FASE 5: JURADO MULTI-CATEGORÍA (RECUPERADO) --- */}
+        {/* --- FASE 5: JURADO MULTI-CATEGORÍA --- */}
         {step === "RATING" && (
              <motion.div key="rating" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-2xl bg-white/10 backdrop-blur-xl border border-white/20 p-12 rounded-[3rem] shadow-2xl text-center relative z-10">
                 <h2 className="text-5xl font-black mb-4 text-white">¡Momento de Votar!</h2>
