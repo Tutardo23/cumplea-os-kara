@@ -91,21 +91,26 @@ export default function KaraokeRoulette() {
   const votedPlayersRef = useRef<Set<string>>(new Set());
 
   // 1. CARGAR CANCIONES DESDE LA BASE DE DATOS (SUPABASE)
+ // 1. CARGAR CANCIONES DESDE LA BASE DE DATOS (SUPABASE)
   useEffect(() => {
     const fetchSongs = async () => {
       try {
-        // Cambiamos select('*') para traer todo sin filtros de columnas
         const { data, error } = await supabase.from('karaoke_songs').select('*');
         if (error) throw error;
         
         if (data && data.length > 0) {
-          setMasterSongs(data);
-          setAvailableSongs(data);
+          // ACÁ ESTÁ LA MAGIA: Leemos la minúscula de Supabase y la pasamos a la mayúscula de tu web
+          const fixedData = data.map(song => ({
+            id: song.id,
+            title: song.title,
+            artist: song.artist,
+            youtubeId: song.youtubeid // <--- ESTO ARREGLA TODO
+          }));
+          setMasterSongs(fixedData);
+          setAvailableSongs(fixedData);
         }
       } catch (err) {
         console.error("Error al cargar canciones:", err);
-        // Fallback a las rescatadas si falla la base
-        setMasterSongs(RESCUED_SONGS);
       }
     };
     fetchSongs();
