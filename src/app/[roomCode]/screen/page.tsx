@@ -6,10 +6,9 @@ import { Mic2, Trophy, ChevronDown, Star, Ghost, ListOrdered, Settings, Trash2, 
 import YouTube from "react-youtube";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import confetti from 'canvas-confetti';
+import confetti from 'canvas-commetti';
 
-// ¡RESCATÉ TODAS TUS CANCIONES DE LAS FOTOS!
-const RESCUED_SONGS = [
+const ALL_SONGS_FALLBACK = [
   { id: "1", title: "Persia, Yo Se Que Tu, Millonario", artist: "El Rodri", youtubeId: "DPr-EkqFgJ4" },
   { id: "2", title: "Siento, Hawai, Como Se Siente", artist: "El Rodri", youtubeId: "17OXrCKXob8" },
   { id: "3", title: "YO ERA", artist: "Q'Lokura", youtubeId: "ZiE3jKg-j9g" },
@@ -42,7 +41,7 @@ const RESCUED_SONGS = [
   { id: "30", title: "Un Finde", artist: "Big One, Ke Personajes", youtubeId: "eY7H7_U0H0Q" },
   { id: "31", title: "Danza Kuduro", artist: "Don Omar", youtubeId: "QSWmgNMK-VM" },
   { id: "32", title: "De Música Ligera", artist: "Soda Stereo", youtubeId: "X5iGNQN_Ijg" },
-   { id: "33", title: "Tusa", artist: "Karol G", youtubeId: "zGL6g6_6GUM" },
+  { id: "33", title: "Tusa", artist: "Karol G", youtubeId: "zGL6g6_6GUM" },
   { id: "34", title: "La Bachata", artist: "Manuel Turizo", youtubeId: "tLPUmT6s8O8" },
 ];
 
@@ -65,15 +64,14 @@ export default function KaraokeRoulette() {
   const [currentSingers, setCurrentSingers] = useState<string[]>([]);
   const [leaderboard, setLeaderboard] = useState<ScoreEntry[]>([]);
   
-  // ESTADO DE CANCIONES (CON SUPABASE)
-  const [masterSongs, setMasterSongs] = useState([...RESCUED_SONGS]);
-  const [availableSongs, setAvailableSongs] = useState([...RESCUED_SONGS]);
-  const [currentOptions, setCurrentOptions] = useState<typeof RESCUED_SONGS>([]);
+  const [masterSongs, setMasterSongs] = useState<typeof ALL_SONGS_FALLBACK>([]);
+  const [availableSongs, setAvailableSongs] = useState<typeof ALL_SONGS_FALLBACK>([]);
+  const [currentOptions, setCurrentOptions] = useState<typeof ALL_SONGS_FALLBACK>([]);
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
   const [showSongList, setShowSongList] = useState(false);
 
   const [votes, setVotes] = useState({ song1: 0, song2: 0 });
-  const [winnerSong, setWinnerSong] = useState(RESCUED_SONGS[0]);
+  const [winnerSong, setWinnerSong] = useState(ALL_SONGS_FALLBACK[0]);
   
   const [ratings, setRatings] = useState({ 
     actitud: { sum: 0, count: 0 }, ganas: { sum: 0, count: 0 }, voz: { sum: 0, count: 0 } 
@@ -90,8 +88,7 @@ export default function KaraokeRoulette() {
   const channelRef = useRef<any>(null);
   const votedPlayersRef = useRef<Set<string>>(new Set());
 
-  // 1. CARGAR CANCIONES DESDE LA BASE DE DATOS (SUPABASE)
- // 1. CARGAR CANCIONES DESDE LA BASE DE DATOS (SUPABASE)
+  // 1. TRAER TEMAS DESDE LA BASE DE DATOS MAPEANDO CORRECTAMENTE EL YOUTUBEID
   useEffect(() => {
     const fetchSongs = async () => {
       try {
@@ -99,23 +96,28 @@ export default function KaraokeRoulette() {
         if (error) throw error;
         
         if (data && data.length > 0) {
-          // ACÁ ESTÁ LA MAGIA: Leemos la minúscula de Supabase y la pasamos a la mayúscula de tu web
           const fixedData = data.map(song => ({
             id: song.id,
             title: song.title,
             artist: song.artist,
-            youtubeId: song.youtubeid // <--- ESTO ARREGLA TODO
+            youtubeId: song.youtubeid || ""
           }));
           setMasterSongs(fixedData);
           setAvailableSongs(fixedData);
+        } else {
+          setMasterSongs(ALL_SONGS_FALLBACK);
+          setAvailableSongs(ALL_SONGS_FALLBACK);
         }
       } catch (err) {
         console.error("Error al cargar canciones:", err);
+        setMasterSongs(ALL_SONGS_FALLBACK);
+        setAvailableSongs(ALL_SONGS_FALLBACK);
       }
     };
     fetchSongs();
-  }, []);
-  // 2. CONECTAR CELULARES
+  }, [step]);
+
+  // 2. REALTIME SYNC CELULARES
   useEffect(() => {
     if (!roomCode) return;
     const channel = supabase.channel(`room-${roomCode}`);
@@ -148,8 +150,7 @@ export default function KaraokeRoulette() {
       });
 
     return () => { supabase.removeChannel(channel); channelRef.current = null; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode]);
+  }, [roomCode, step]);
 
   useEffect(() => {
     if (channelRef.current && step) {
@@ -157,7 +158,6 @@ export default function KaraokeRoulette() {
     }
   }, [step]);
 
-  // VOTOS AUTOMÁTICOS
   const requiredVotes = Math.floor(players.length / 2) + 1;
   useEffect(() => {
     const totalVotes = votes.song1 + votes.song2;
@@ -184,42 +184,35 @@ export default function KaraokeRoulette() {
       setPlayers(players.filter(p => p !== name));
   };
 
-  // ADMIN DE CANCIONES Y GUARDADO EN SUPABASE
   const handleUpdateSong = (id: string, field: string, value: string) => {
       setMasterSongs(masterSongs.map(song => song.id === id ? { ...song, [field]: value } : song));
   };
+  
   const handleAddSong = () => {
       setMasterSongs([{ id: Date.now().toString(), title: "Nueva Canción", artist: "Artista", youtubeId: "" }, ...masterSongs]);
   };
+  
   const handleDeleteSong = (id: string) => {
       setMasterSongs(masterSongs.filter(s => s.id !== id));
   };
   
-  // AL GUARDAR, SUBE A LA BASE DE DATOS PARA QUE NO SE PIERDA NUNCA MÁS
+  // GUARDADO COMPLETO MAPEADO EN MINÚSCULAS PARA LA BASE
   const saveAdminAndReturn = async () => {
       try {
-        // Mapeamos los datos para que coincidan con la base de datos (youtubeid en minúsculas)
         const songsToUpload = masterSongs.map(song => ({
             id: song.id,
             title: song.title,
             artist: song.artist,
-            youtubeid: song.youtubeId // Aquí está el truco: pasamos el valor de youtubeId a la columna youtubeid
+            youtubeid: song.youtubeId
         }));
-
-        const { error } = await supabase.from('karaoke_songs').upsert(songsToUpload);
-        
-        if (error) {
-            console.error("ERROR DE SUPABASE DETALLADO:", error);
-            alert("Error al guardar: " + error.message);
-        } else {
-            alert("¡Guardado correctamente en la nube!");
-            setAvailableSongs([...masterSongs]); 
-            setStep("LOBBY");
-        }
+        await supabase.from('karaoke_songs').upsert(songsToUpload);
       } catch (err) {
-        console.error("Fallo total al conectar:", err);
+        console.error("No se pudo guardar en base de datos", err);
       }
+      setAvailableSongs([...masterSongs]); 
+      setStep("LOBBY");
   };
+
   const startRoulette = () => {
     if (players.length < 3) return alert("¡Agregá al menos 3 personas!");
     setStep("ROULETTE");
@@ -281,21 +274,17 @@ export default function KaraokeRoulette() {
   return (
     <div className="relative min-h-screen text-white flex flex-col items-center justify-center p-4 font-sans overflow-hidden selection:bg-indigo-500/30">
       
-      {/* FONDO PREMIUM */}
       <div className="absolute inset-0 z-[-1] bg-black">
-        <video autoPlay loop muted playsInline className="w-full h-full object-cover opacity-30 mix-blend-screen">
-          <source src="https://cdn.pixabay.com/video/2023/11/02/187428-880193154_large.mp4" type="video/mp4" />
-        </video>
-        <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-[6px]"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-zinc-950 via-zinc-900 to-black"></div>
       </div>
 
       <AnimatePresence mode="wait">
         
-        {/* --- FASE 0: ADMIN CON VISTA PREVIA --- */}
+        {/* --- FASE 0: ADMIN --- */}
         {step === "ADMIN" && (
            <motion.div key="admin" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-5xl bg-zinc-900/90 backdrop-blur-xl border border-white/20 p-8 rounded-3xl shadow-2xl relative z-10 max-h-[90vh] flex flex-col">
               <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-4xl font-black text-white">Editor de Canciones (En Base de Datos)</h2>
+                  <h2 className="text-4xl font-black text-white">Editor de Canciones (Nube)</h2>
                   <div className="flex gap-4">
                       <button onClick={handleAddSong} className="bg-indigo-600 hover:bg-indigo-500 px-6 py-2 rounded-xl font-bold flex items-center gap-2"><Plus className="w-5 h-5"/> Agregar</button>
                       <button onClick={saveAdminAndReturn} className="bg-green-600 hover:bg-green-500 px-6 py-2 rounded-xl font-bold shadow-[0_0_15px_rgba(34,197,94,0.5)]">Guardar en la Nube y Volver</button>
@@ -320,7 +309,6 @@ export default function KaraokeRoulette() {
                   ))}
               </div>
 
-              {/* MODAL DE VISTA PREVIA */}
               <AnimatePresence>
                 {previewVideoId && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-10">
@@ -344,7 +332,7 @@ export default function KaraokeRoulette() {
         {/* --- FASE 1: LOBBY --- */}
         {step === "LOBBY" && (
           <motion.div key="lobby" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="w-full max-w-4xl text-center relative z-10">
-            <h1 className="text-7xl font-black mb-8 tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 drop-shadow-[0_4px_20px_rgba(0,0,0,0.8)]">
+            <h1 className="text-7xl font-black mb-8 tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">
               Mati&apos;s Fest
             </h1>
             
@@ -396,7 +384,6 @@ export default function KaraokeRoulette() {
               </button>
             )}
 
-            {/* MODAL DE REPERTORIO (SOLO LECTURA) */}
             <AnimatePresence>
               {showSongList && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -404,7 +391,7 @@ export default function KaraokeRoulette() {
                     <div className="flex justify-between items-center mb-6">
                       <h2 className="text-3xl font-black text-white flex items-center gap-3">
                         <Music className="w-8 h-8 text-indigo-400" /> 
-                        Repertorio de la Fiesta
+                        Repertorio Total
                       </h2>
                       <button onClick={() => setShowSongList(false)} className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-xl transition-colors">
                         <X className="w-6 h-6"/>
@@ -426,7 +413,7 @@ export default function KaraokeRoulette() {
           </motion.div>
         )}
 
-        {/* --- FASE 2: RULETA PREMIUM --- */}
+        {/* --- FASE 2: RULETA --- */}
         {step === "ROULETTE" && (
           <motion.div key="roulette" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center w-full flex flex-col items-center relative z-10">
             <div className="mb-10 bg-black/50 px-10 py-5 rounded-full border border-white/10 backdrop-blur-md shadow-2xl">
@@ -437,7 +424,7 @@ export default function KaraokeRoulette() {
             </div>
 
             <div className="relative w-[500px] h-[500px] mb-12">
-              <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20 text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.8)]">
+              <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-20 text-white">
                 <ChevronDown className="w-28 h-28" fill="currentColor" />
               </div>
               
@@ -488,7 +475,7 @@ export default function KaraokeRoulette() {
            <motion.div key="voting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-6xl text-center relative z-10">
             <h2 className="text-6xl font-black mb-4 text-white">¿Qué van a cantar?</h2>
             <div className="bg-black/50 inline-block px-6 py-2 rounded-full border border-white/10 mb-10">
-                <span className="text-zinc-300 font-bold uppercase tracking-widest text-sm">Se necesitan {requiredVotes} votos (Mitad + 1) para avanzar</span>
+                <span className="text-zinc-300 font-bold uppercase tracking-widest text-sm">Se necesitan {requiredVotes} votos para avanzar</span>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
@@ -521,7 +508,7 @@ export default function KaraokeRoulette() {
           </motion.div>
         )}
 
-        {/* --- FASE 4: SHOW YOUTUBE (CINE) --- */}
+        {/* --- FASE 4: REPRODUCTOR --- */}
         {step === "PLAYING" && (
             <motion.div key="playing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 w-screen h-screen z-50 flex flex-col items-center justify-center bg-black p-6">
                 <div className="w-full max-w-7xl h-full flex flex-col">
@@ -538,7 +525,7 @@ export default function KaraokeRoulette() {
             </motion.div>
         )}
 
-        {/* --- FASE 5: JURADO MULTI-CATEGORÍA --- */}
+        {/* --- FASE 5: JURADO --- */}
         {step === "RATING" && (
              <motion.div key="rating" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-2xl bg-white/10 backdrop-blur-xl border border-white/20 p-12 rounded-[3rem] shadow-2xl text-center relative z-10">
                 <h2 className="text-5xl font-black mb-4 text-white">¡Momento de Votar!</h2>
@@ -570,7 +557,7 @@ export default function KaraokeRoulette() {
              </motion.div>
         )}
 
-        {/* --- FASE 6: TABLA DE POSICIONES --- */}
+        {/* --- FASE 6: RANKING --- */}
         {step === "LEADERBOARD" && (
             <motion.div key="leaderboard" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-5xl text-center relative z-10">
                  <div className="bg-black/50 backdrop-blur-md inline-flex items-center gap-4 px-10 py-5 rounded-full border border-white/10 mb-12 shadow-xl">
