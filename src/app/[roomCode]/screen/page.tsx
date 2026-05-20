@@ -2,23 +2,48 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic2, Trophy, ChevronDown, Star, Ghost, ListOrdered, Settings, Trash2, Plus, FastForward, PlayCircle, X } from "lucide-react";
+import { Mic2, Trophy, ChevronDown, Star, Ghost, ListOrdered, Settings, Trash2, Plus, FastForward, PlayCircle, X, Music } from "lucide-react";
 import YouTube from "react-youtube";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import confetti from 'canvas-confetti';
 
-const INITIAL_SONGS = [
-  { id: "1", title: "Los Del Espacio", artist: "LIT killah, Duki, Emilia", youtubeId: "emTC0FBpyeg" },
-  { id: "2", title: "Baby", artist: "Justin Bieber", youtubeId: "1a5SWpp9Wfg" },
-  { id: "3", title: "La Morocha", artist: "Luck Ra, BM", youtubeId: "SjIkoBNZOOQ" },
-  { id: "4", title: "Quevedo: Bzrp Session", artist: "Bizarrap", youtubeId: "ymWTYk90NcU" },
-  { id: "5", title: "Un Finde", artist: "Big One, Ke Personajes", youtubeId: "eY7H7_U0H0Q" },
-  { id: "6", title: "Danza Kuduro", artist: "Don Omar", youtubeId: "QSWmgNMK-VM" },
-  { id: "7", title: "De Música Ligera", artist: "Soda Stereo", youtubeId: "X5iGNQN_Ijg" },
-  { id: "8", title: "Givenchy", artist: "Duki", youtubeId: "vbyrN_5vU-8" },
-  { id: "9", title: "Tusa", artist: "Karol G", youtubeId: "zGL6g6_6GUM" },
-  { id: "10", title: "La Bachata", artist: "Manuel Turizo", youtubeId: "tLPUmT6s8O8" },
+// ¡RESCATÉ TODAS TUS CANCIONES DE LAS FOTOS!
+const RESCUED_SONGS = [
+  { id: "1", title: "Persia, Yo Se Que Tu, Millonario", artist: "El Rodri", youtubeId: "DPr-EkqFgJ4" },
+  { id: "2", title: "Siento, Hawai, Como Se Siente", artist: "El Rodri", youtubeId: "17OXrCKXob8" },
+  { id: "3", title: "YO ERA", artist: "Q'Lokura", youtubeId: "ZiE3jKg-j9g" },
+  { id: "4", title: "Yo tomo licor", artist: "Amar azul", youtubeId: "tYvbAXkzHus" },
+  { id: "5", title: "Freed From Desire", artist: "Gala", youtubeId: "9R2r2rxuOR8" },
+  { id: "6", title: "Sweet Child O' Mine", artist: "Guns N' Roses", youtubeId: "_MmsUzoFOwI" },
+  { id: "7", title: "Wonderwall", artist: "Oasis", youtubeId: "I4RwbQ9zUEU" },
+  { id: "8", title: "Suavemente", artist: "Elvis Crespo", youtubeId: "J12-H5MnPFo" },
+  { id: "9", title: "Rosalía", artist: "Despechá", youtubeId: "wvPZm3sCQh8" },
+  { id: "10", title: "Inocente", artist: "La Delio Valdez", youtubeId: "wXksV9qgXmI" },
+  { id: "11", title: "Borro Cassette", artist: "Maluma", youtubeId: "_WaxARUrbz0" },
+  { id: "12", title: "INTENTO", artist: "Ulises Bueno", youtubeId: "t2eNyFVIgEc" },
+  { id: "13", title: "Mientes", artist: "Camila", youtubeId: "EklsRMT8lKw" },
+  { id: "14", title: "Dia De Enero", artist: "Shakira", youtubeId: "IV4jZ8FZFIE" },
+  { id: "15", title: "Nada Fue Un Error", artist: "Coti", youtubeId: "1-TmRyA7_1I" },
+  { id: "16", title: "OLVIDALA", artist: "Los Palmeras", youtubeId: "oP5nkZpl05g" },
+  { id: "17", title: "Me rehúso", artist: "Danny Ocean", youtubeId: "yz-cZShgXAE" },
+  { id: "18", title: "Lo Mejor del Amor", artist: "Rodrigo", youtubeId: "93o4Rmmg2oc" },
+  { id: "19", title: "Que es Dios", artist: "Las pastillas del abuelo", youtubeId: "15a0TY4cGRA" },
+  { id: "20", title: "La noche no es para dormir", artist: "Mano Arriba", youtubeId: "gGJBusxMZ_0" },
+  { id: "21", title: "Loquita", artist: "Marama", youtubeId: "BuEb9NFDMsM" },
+  { id: "22", title: "Llora me llama", artist: "Grupo Play", youtubeId: "jcEpX1RPvHM" },
+  { id: "23", title: "Una cerveza", artist: "Ráfaga", youtubeId: "g-Vu4mzZ0r8" },
+  { id: "24", title: "Andas En Mi Cabeza", artist: "Chino & Nacho, Daddy Yankee", youtubeId: "_bdXSot50kU" },
+  { id: "25", title: "Nena", artist: "Marama", youtubeId: "Uqf5V67pd0I" },
+  { id: "26", title: "Los Del Espacio", artist: "LIT killah, Duki", youtubeId: "emTC0FBpyeg" },
+  { id: "27", title: "Baby", artist: "Justin Bieber", youtubeId: "1a5SWpp9Wfg" },
+  { id: "28", title: "La Morocha", artist: "Luck Ra, BM", youtubeId: "SjIkoBNZOOQ" },
+  { id: "29", title: "Quevedo: Bzrp Session", artist: "Bizarrap", youtubeId: "ymWTYk90NcU" },
+  { id: "30", title: "Un Finde", artist: "Big One, Ke Personajes", youtubeId: "eY7H7_U0H0Q" },
+  { id: "31", title: "Danza Kuduro", artist: "Don Omar", youtubeId: "QSWmgNMK-VM" },
+  { id: "32", title: "De Música Ligera", artist: "Soda Stereo", youtubeId: "X5iGNQN_Ijg" },
+   { id: "33", title: "Tusa", artist: "Karol G", youtubeId: "zGL6g6_6GUM" },
+  { id: "34", title: "La Bachata", artist: "Manuel Turizo", youtubeId: "tLPUmT6s8O8" },
 ];
 
 const TOURNAMENT_ROUNDS = [
@@ -40,14 +65,15 @@ export default function KaraokeRoulette() {
   const [currentSingers, setCurrentSingers] = useState<string[]>([]);
   const [leaderboard, setLeaderboard] = useState<ScoreEntry[]>([]);
   
-  // ESTADO DE CANCIONES EDITABLE Y VISTA PREVIA
-  const [masterSongs, setMasterSongs] = useState([...INITIAL_SONGS]);
-  const [availableSongs, setAvailableSongs] = useState([...INITIAL_SONGS]);
-  const [currentOptions, setCurrentOptions] = useState<typeof INITIAL_SONGS>([]);
+  // ESTADO DE CANCIONES (CON SUPABASE)
+  const [masterSongs, setMasterSongs] = useState([...RESCUED_SONGS]);
+  const [availableSongs, setAvailableSongs] = useState([...RESCUED_SONGS]);
+  const [currentOptions, setCurrentOptions] = useState<typeof RESCUED_SONGS>([]);
   const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
+  const [showSongList, setShowSongList] = useState(false);
 
   const [votes, setVotes] = useState({ song1: 0, song2: 0 });
-  const [winnerSong, setWinnerSong] = useState(INITIAL_SONGS[0]);
+  const [winnerSong, setWinnerSong] = useState(RESCUED_SONGS[0]);
   
   const [ratings, setRatings] = useState({ 
     actitud: { sum: 0, count: 0 }, ganas: { sum: 0, count: 0 }, voz: { sum: 0, count: 0 } 
@@ -64,7 +90,27 @@ export default function KaraokeRoulette() {
   const channelRef = useRef<any>(null);
   const votedPlayersRef = useRef<Set<string>>(new Set());
 
-  // WEB SOCKETS
+  // 1. CARGAR CANCIONES DESDE LA BASE DE DATOS (SUPABASE)
+  useEffect(() => {
+    const fetchSongs = async () => {
+      try {
+        // Cambiamos select('*') para traer todo sin filtros de columnas
+        const { data, error } = await supabase.from('karaoke_songs').select('*');
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          setMasterSongs(data);
+          setAvailableSongs(data);
+        }
+      } catch (err) {
+        console.error("Error al cargar canciones:", err);
+        // Fallback a las rescatadas si falla la base
+        setMasterSongs(RESCUED_SONGS);
+      }
+    };
+    fetchSongs();
+  }, []);
+  // 2. CONECTAR CELULARES
   useEffect(() => {
     if (!roomCode) return;
     const channel = supabase.channel(`room-${roomCode}`);
@@ -133,7 +179,7 @@ export default function KaraokeRoulette() {
       setPlayers(players.filter(p => p !== name));
   };
 
-  // ADMIN DE CANCIONES
+  // ADMIN DE CANCIONES Y GUARDADO EN SUPABASE
   const handleUpdateSong = (id: string, field: string, value: string) => {
       setMasterSongs(masterSongs.map(song => song.id === id ? { ...song, [field]: value } : song));
   };
@@ -143,11 +189,32 @@ export default function KaraokeRoulette() {
   const handleDeleteSong = (id: string) => {
       setMasterSongs(masterSongs.filter(s => s.id !== id));
   };
-  const saveAdminAndReturn = () => {
-      setAvailableSongs([...masterSongs]); 
-      setStep("LOBBY");
-  };
+  
+  // AL GUARDAR, SUBE A LA BASE DE DATOS PARA QUE NO SE PIERDA NUNCA MÁS
+  const saveAdminAndReturn = async () => {
+      try {
+        // Mapeamos los datos para que coincidan con la base de datos (youtubeid en minúsculas)
+        const songsToUpload = masterSongs.map(song => ({
+            id: song.id,
+            title: song.title,
+            artist: song.artist,
+            youtubeid: song.youtubeId // Aquí está el truco: pasamos el valor de youtubeId a la columna youtubeid
+        }));
 
+        const { error } = await supabase.from('karaoke_songs').upsert(songsToUpload);
+        
+        if (error) {
+            console.error("ERROR DE SUPABASE DETALLADO:", error);
+            alert("Error al guardar: " + error.message);
+        } else {
+            alert("¡Guardado correctamente en la nube!");
+            setAvailableSongs([...masterSongs]); 
+            setStep("LOBBY");
+        }
+      } catch (err) {
+        console.error("Fallo total al conectar:", err);
+      }
+  };
   const startRoulette = () => {
     if (players.length < 3) return alert("¡Agregá al menos 3 personas!");
     setStep("ROULETTE");
@@ -223,10 +290,10 @@ export default function KaraokeRoulette() {
         {step === "ADMIN" && (
            <motion.div key="admin" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-5xl bg-zinc-900/90 backdrop-blur-xl border border-white/20 p-8 rounded-3xl shadow-2xl relative z-10 max-h-[90vh] flex flex-col">
               <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-4xl font-black text-white">Editor de Canciones</h2>
+                  <h2 className="text-4xl font-black text-white">Editor de Canciones (En Base de Datos)</h2>
                   <div className="flex gap-4">
                       <button onClick={handleAddSong} className="bg-indigo-600 hover:bg-indigo-500 px-6 py-2 rounded-xl font-bold flex items-center gap-2"><Plus className="w-5 h-5"/> Agregar</button>
-                      <button onClick={saveAdminAndReturn} className="bg-green-600 hover:bg-green-500 px-6 py-2 rounded-xl font-bold">Guardar y Volver</button>
+                      <button onClick={saveAdminAndReturn} className="bg-green-600 hover:bg-green-500 px-6 py-2 rounded-xl font-bold shadow-[0_0_15px_rgba(34,197,94,0.5)]">Guardar en la Nube y Volver</button>
                   </div>
               </div>
               
@@ -235,9 +302,8 @@ export default function KaraokeRoulette() {
                       <div key={song.id} className="flex gap-4 items-center bg-black/40 p-4 rounded-2xl border border-white/10">
                           <input value={song.title} onChange={(e) => handleUpdateSong(song.id, 'title', e.target.value)} placeholder="Título" className="flex-[2] bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:border-indigo-500" />
                           <input value={song.artist} onChange={(e) => handleUpdateSong(song.id, 'artist', e.target.value)} placeholder="Artista" className="flex-[1.5] bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:border-indigo-500" />
-                          <input value={song.youtubeId} onChange={(e) => handleUpdateSong(song.id, 'youtubeId', e.target.value)} placeholder="ID YouTube (Ej: emTC0FBpyeg)" className="flex-[1.5] bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-indigo-300 font-mono outline-none focus:border-indigo-500" />
+                          <input value={song.youtubeId} onChange={(e) => handleUpdateSong(song.id, 'youtubeId', e.target.value)} placeholder="ID YouTube" className="flex-[1.5] bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-indigo-300 font-mono outline-none focus:border-indigo-500" />
                           
-                          {/* BOTON DE VISTA PREVIA */}
                           <button onClick={() => { if(song.youtubeId) setPreviewVideoId(song.youtubeId) }} className="p-3 bg-blue-900/40 hover:bg-blue-600 text-blue-400 hover:text-white rounded-lg transition-colors" title="Probar Video">
                             <PlayCircle className="w-5 h-5"/>
                           </button>
@@ -278,9 +344,15 @@ export default function KaraokeRoulette() {
             </h1>
             
             <div className="flex justify-center gap-4 mb-12">
-                <div className="bg-white/10 backdrop-blur-md px-10 py-4 rounded-3xl border border-white/20 shadow-xl">
+                <div className="bg-white/10 backdrop-blur-md px-10 py-4 rounded-3xl border border-white/20 shadow-xl flex items-center">
                     <span className="text-xl text-zinc-300 font-bold uppercase tracking-widest">Código Sala: <strong className="text-indigo-400 text-3xl ml-2">{roomCode}</strong></span>
                 </div>
+                
+                <button onClick={() => setShowSongList(true)} className="bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-400/30 px-6 py-4 rounded-3xl transition-colors shadow-xl flex items-center gap-3">
+                    <Music className="w-6 h-6 text-indigo-300" />
+                    <span className="font-bold text-indigo-100 uppercase tracking-widest">{masterSongs.length} Temas</span>
+                </button>
+
                 <button onClick={() => setStep("ADMIN")} className="bg-white/10 hover:bg-white/20 border border-white/20 px-6 py-4 rounded-3xl transition-colors shadow-xl flex items-center gap-2">
                     <Settings className="w-6 h-6 text-zinc-300" />
                 </button>
@@ -318,6 +390,34 @@ export default function KaraokeRoulette() {
                 ¡EMPEZAR SHOW!
               </button>
             )}
+
+            {/* MODAL DE REPERTORIO (SOLO LECTURA) */}
+            <AnimatePresence>
+              {showSongList && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                  <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full max-w-2xl bg-zinc-900/90 border border-white/20 p-8 rounded-3xl shadow-2xl flex flex-col max-h-[80vh]">
+                    <div className="flex justify-between items-center mb-6">
+                      <h2 className="text-3xl font-black text-white flex items-center gap-3">
+                        <Music className="w-8 h-8 text-indigo-400" /> 
+                        Repertorio de la Fiesta
+                      </h2>
+                      <button onClick={() => setShowSongList(false)} className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-xl transition-colors">
+                        <X className="w-6 h-6"/>
+                      </button>
+                    </div>
+                    
+                    <div className="overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-3">
+                      {masterSongs.map(s => (
+                        <div key={s.id} className="bg-white/5 border border-white/5 p-4 rounded-2xl flex flex-col sm:flex-row justify-between sm:items-center gap-2 hover:bg-white/10 transition-colors">
+                          <span className="font-bold text-lg text-indigo-50">{s.title}</span>
+                          <span className="text-zinc-400 font-medium">{s.artist}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
 
@@ -378,7 +478,7 @@ export default function KaraokeRoulette() {
           </motion.div>
         )}
 
-        {/* --- FASE 3: VOTACIÓN (CON BOTONES DE PÁNICO) --- */}
+        {/* --- FASE 3: VOTACIÓN --- */}
         {step === "VOTING" && (
            <motion.div key="voting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-6xl text-center relative z-10">
             <h2 className="text-6xl font-black mb-4 text-white">¿Qué van a cantar?</h2>
@@ -406,7 +506,6 @@ export default function KaraokeRoulette() {
                         <motion.div className={`absolute bottom-0 left-0 h-3 ${num === 1 ? 'bg-indigo-500' : 'bg-purple-500'}`} initial={{ width: 0 }} animate={{ width: `${(songVotes / requiredVotes) * 100}%` }} />
                       </div>
                       
-                      {/* BOTÓN DE PÁNICO (HOST) */}
                       <button onClick={() => forceWinner(index as 0|1)} className="bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-500 hover:text-white py-3 rounded-2xl flex items-center justify-center gap-2 transition-colors uppercase text-sm font-bold tracking-widest">
                           <FastForward className="w-4 h-4"/> Forzar esta canción
                       </button>
