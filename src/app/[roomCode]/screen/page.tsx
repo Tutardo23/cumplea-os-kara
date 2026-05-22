@@ -1,8 +1,10 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect */
+
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic2, Trophy, ChevronDown, Star, Ghost, ListOrdered, Settings, Trash2, Plus, FastForward, PlayCircle, X, Music } from "lucide-react";
+import { Trophy, ChevronDown, Star, Ghost, ListOrdered, Settings, Trash2, Plus, FastForward, PlayCircle, X, Music, QrCode, RotateCcw, Users } from "lucide-react";
 import YouTube from "react-youtube";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -56,9 +58,16 @@ const WHEEL_COLORS = ["#4f46e5", "#db2777", "#7c3aed", "#ea580c", "#059669"];
 const FALLBACK_AVATARS = ["Felix", "Aneka", "Jude", "Loki", "Mimi", "Buster"]; 
 
 type ScoreEntry = { singers: string[]; actitud: number; ganas: number; voz: number; total: number; };
+type GameStep = "LOBBY" | "ADMIN" | "ROULETTE" | "VOTING" | "PLAYING" | "RATING" | "LEADERBOARD";
+type SingerStat = { count: number; lastTurn: number };
+
+const normalizePlayerName = (value: string) => value.trim().replace(/\s+/g, " ");
 
 export default function KaraokeRoulette() {
-  const [step, setStep] = useState<"LOBBY" | "ADMIN" | "ROULETTE" | "VOTING" | "PLAYING" | "RATING" | "LEADERBOARD">("LOBBY");
+  const params = useParams();
+  const roomCode = params.roomCode as string;
+
+  const [step, setStep] = useState<GameStep>("LOBBY");
   const [players, setPlayers] = useState<string[]>([]);
   const [avatars, setAvatars] = useState<Record<string, string>>({}); 
   const [newPlayer, setNewPlayer] = useState("");
@@ -80,17 +89,92 @@ export default function KaraokeRoulette() {
   const [ratings, setRatings] = useState({ 
     actitud: { sum: 0, count: 0 }, ganas: { sum: 0, count: 0 }, voz: { sum: 0, count: 0 } 
   });
+  const [singerStats, setSingerStats] = useState<Record<string, SingerStat>>({});
   
   const [wheelRotation, setWheelRotation] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
   const [showPartners, setShowPartners] = useState(false);
+  const [joinUrl, setJoinUrl] = useState("");
 
   const currentRound = TOURNAMENT_ROUNDS[currentRoundIdx];
-  const params = useParams();
-  const roomCode = params.roomCode as string;
+  const isTournamentDone = currentRoundIdx === TOURNAMENT_ROUNDS.length - 1 && currentTurn === currentRound.totalTurns && leaderboard.length >= TOURNAMENT_ROUNDS.reduce((sum, round) => sum + round.totalTurns, 0);
+  const sortedLeaderboard = [...leaderboard].sort((a,b) => b.total - a.total);
+  const champion = sortedLeaderboard[0];
 
-  const channelRef = useRef<any>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const votedPlayersRef = useRef<Set<string>>(new Set());
+  const ratedPlayersRef = useRef<Set<string>>(new Set());
+  const savedScoresRef = useRef<Set<string>>(new Set());
+  const hasLoadedRoomStateRef = useRef(false);
+  const turnSerialRef = useRef(0);
+  const latestSyncRef = useRef({ step, players, avatars, currentRoundIdx, currentTurn, currentSingers, currentOptions });
+
+  const votingKey = currentOptions.length === 2
+    ? `${currentRoundIdx}-${currentTurn}-${currentSingers.join("|")}-${currentOptions.map(song => song.id).join("|")}`
+    : `${currentRoundIdx}-${currentTurn}`;
+  const ratingKey = `${currentRoundIdx}-${currentTurn}-${currentSingers.join("|")}`;
+
+  useEffect(() => {
+    latestSyncRef.current = { step, players, avatars, currentRoundIdx, currentTurn, currentSingers, currentOptions };
+  }, [step, players, avatars, currentRoundIdx, currentTurn, currentSingers, currentOptions]);
+
+  useEffect(() => {
+    setJoinUrl(`${window.location.origin}/${roomCode}/play`);
+  }, [roomCode]);
+
+  useEffect(() => {
+    if (!roomCode) return;
+    try {
+      const saved = window.localStorage.getItem(`karaoke_vip_room_${roomCode}`);
+      if (!saved) {
+        hasLoadedRoomStateRef.current = true;
+        return;
+      }
+
+      const state = JSON.parse(saved);
+      setStep(state.step || "LOBBY");
+      setPlayers(Array.isArray(state.players) ? state.players : []);
+      setAvatars(state.avatars || {});
+      setCurrentRoundIdx(state.currentRoundIdx || 0);
+      setCurrentTurn(state.currentTurn || 1);
+      setCurrentSingers(Array.isArray(state.currentSingers) ? state.currentSingers : []);
+      setLeaderboard(Array.isArray(state.leaderboard) ? state.leaderboard : []);
+      setAvailableSongs(Array.isArray(state.availableSongs) ? state.availableSongs : []);
+      setCurrentOptions(Array.isArray(state.currentOptions) ? state.currentOptions : []);
+      setWinnerSong(state.winnerSong || ALL_SONGS_FALLBACK[0]);
+      setVotes(state.votes || { song1: 0, song2: 0 });
+      setRatings(state.ratings || { actitud: { sum: 0, count: 0 }, ganas: { sum: 0, count: 0 }, voz: { sum: 0, count: 0 } });
+      setSingerStats(state.singerStats || {});
+      turnSerialRef.current = state.turnSerial || 0;
+      window.setTimeout(() => {
+        hasLoadedRoomStateRef.current = true;
+      }, 0);
+    } catch (error) {
+      hasLoadedRoomStateRef.current = true;
+    }
+  }, [roomCode]);
+
+  useEffect(() => {
+    if (!roomCode || !hasLoadedRoomStateRef.current) return;
+    try {
+      window.localStorage.setItem(`karaoke_vip_room_${roomCode}`, JSON.stringify({
+        step,
+        players,
+        avatars,
+        currentRoundIdx,
+        currentTurn,
+        currentSingers,
+        leaderboard,
+        availableSongs,
+        currentOptions,
+        winnerSong,
+        votes,
+        ratings,
+        singerStats,
+        turnSerial: turnSerialRef.current,
+      }));
+    } catch (error) {}
+  }, [roomCode, step, players, avatars, currentRoundIdx, currentTurn, currentSingers, leaderboard, availableSongs, currentOptions, winnerSong, votes, ratings, singerStats]);
 
   // 1. CARGA INTELIGENTE Y AUTO-REPARACIÓN
   useEffect(() => {
@@ -114,16 +198,16 @@ export default function KaraokeRoulette() {
               }));
               await supabase.from('karaoke_songs').upsert(songsToUpload);
           }
-          setMasterSongs(fixedData); setAvailableSongs(fixedData);
+          setMasterSongs(fixedData); setAvailableSongs((prev) => prev.length > 0 ? prev : fixedData);
         } else {
-          setMasterSongs(ALL_SONGS_FALLBACK); setAvailableSongs(ALL_SONGS_FALLBACK);
+          setMasterSongs(ALL_SONGS_FALLBACK); setAvailableSongs((prev) => prev.length > 0 ? prev : ALL_SONGS_FALLBACK);
         }
       } catch (err) {
-        setMasterSongs(ALL_SONGS_FALLBACK); setAvailableSongs(ALL_SONGS_FALLBACK);
+        setMasterSongs(ALL_SONGS_FALLBACK); setAvailableSongs((prev) => prev.length > 0 ? prev : ALL_SONGS_FALLBACK);
       }
     };
     fetchSongs();
-  }, [step]);
+  }, []);
 
   // 2. REALTIME SYNC
   useEffect(() => {
@@ -133,30 +217,47 @@ export default function KaraokeRoulette() {
     
     channel
       .on("broadcast", { event: "new_player" }, (data) => {
-        const pName = data.payload.name;
-        setPlayers((prev) => !prev.includes(pName) ? [...prev, pName] : prev);
+        const pName = normalizePlayerName(data.payload.name || "");
+        if (!pName) return;
+        setPlayers((prev) => prev.some(player => player.toLowerCase() === pName.toLowerCase()) ? prev : [...prev, pName]);
         if (data.payload.avatar) {
             setAvatars((prev) => ({ ...prev, [pName]: data.payload.avatar }));
         }
+        setTimeout(() => {
+          const latest = latestSyncRef.current;
+          channelRef.current?.send({ type: "broadcast", event: "sync_state", payload: { ...latest, votingKey, ratingKey } });
+        }, 100);
+      })
+      .on("broadcast", { event: "request_sync" }, () => {
+        const latest = latestSyncRef.current;
+        channelRef.current?.send({ type: "broadcast", event: "sync_state", payload: { ...latest, votingKey, ratingKey } });
       })
       .on("broadcast", { event: "vote" }, (data) => {
         if (data.payload.playerName && votedPlayersRef.current.has(data.payload.playerName)) return;
         if (data.payload.playerName) votedPlayersRef.current.add(data.payload.playerName);
         setVotes((prev) => {
           const next = { ...prev };
-          data.payload.songNum === 1 ? next.song1++ : next.song2++;
+          if (data.payload.songNum === 1) {
+            next.song1 += 1;
+          } else {
+            next.song2 += 1;
+          }
           return next;
         });
       })
       .on("broadcast", { event: "rate" }, (data) => {
         const cat = data.payload.category as "actitud" | "ganas" | "voz";
+        const playerName = normalizePlayerName(data.payload.playerName || "");
+        const ratingId = `${ratingKey}:${playerName}:${cat}`;
+        if (!playerName || ratedPlayersRef.current.has(ratingId)) return;
+        ratedPlayersRef.current.add(ratingId);
         setRatings((prev) => ({
           ...prev, [cat]: { sum: prev[cat].sum + data.payload.score, count: prev[cat].count + 1 }
         }));
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          channel.send({ type: "broadcast", event: "sync_step", payload: { step } });
+          channel.send({ type: "broadcast", event: "sync_state", payload: { ...latestSyncRef.current, votingKey, ratingKey } });
         }
       });
 
@@ -165,9 +266,9 @@ export default function KaraokeRoulette() {
 
   useEffect(() => {
     if (channelRef.current && step) {
-      try { channelRef.current.send({ type: "broadcast", event: "sync_step", payload: { step } }); } catch (e) {}
+      try { channelRef.current.send({ type: "broadcast", event: "sync_state", payload: { ...latestSyncRef.current, votingKey, ratingKey } }); } catch (e) {}
     }
-  }, [step]);
+  }, [step, votingKey, ratingKey]);
 
   const requiredVotes = Math.floor(players.length / 2) + 1;
   useEffect(() => {
@@ -183,11 +284,40 @@ export default function KaraokeRoulette() {
       setStep("PLAYING");
   };
 
+  const resetShow = (keepPlayers = true) => {
+    if (!keepPlayers && !window.confirm("¿Reiniciar toda la sala y borrar jugadores?")) return;
+
+    setStep("LOBBY");
+    setCurrentRoundIdx(0);
+    setCurrentTurn(1);
+    setCurrentSingers([]);
+    setLeaderboard([]);
+    setAvailableSongs(masterSongs.length > 0 ? [...masterSongs] : [...ALL_SONGS_FALLBACK]);
+    setCurrentOptions([]);
+    setVotes({ song1: 0, song2: 0 });
+    setWinnerSong(ALL_SONGS_FALLBACK[0]);
+    setRatings({ actitud: { sum: 0, count: 0 }, ganas: { sum: 0, count: 0 }, voz: { sum: 0, count: 0 } });
+    setSingerStats({});
+    setWheelRotation(0);
+    setIsSpinning(false);
+    setShowPartners(false);
+    votedPlayersRef.current.clear();
+    ratedPlayersRef.current.clear();
+    savedScoresRef.current.clear();
+    turnSerialRef.current = 0;
+
+    if (!keepPlayers) {
+      setPlayers([]);
+      setAvatars({});
+    }
+  };
+
   const handleAddPlayer = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPlayer.trim() && !players.includes(newPlayer)) {
-      setPlayers((prev) => [...prev, newPlayer]);
-      setAvatars((prev) => ({ ...prev, [newPlayer]: FALLBACK_AVATARS[Math.floor(Math.random() * FALLBACK_AVATARS.length)] }));
+    const normalizedName = normalizePlayerName(newPlayer);
+    if (normalizedName && !players.some(player => player.toLowerCase() === normalizedName.toLowerCase())) {
+      setPlayers((prev) => [...prev, normalizedName]);
+      setAvatars((prev) => ({ ...prev, [normalizedName]: FALLBACK_AVATARS[Math.floor(Math.random() * FALLBACK_AVATARS.length)] }));
       setNewPlayer("");
     }
   };
@@ -219,10 +349,31 @@ export default function KaraokeRoulette() {
     
     setVotes({ song1: 0, song2: 0 });
     votedPlayersRef.current.clear();
+    ratedPlayersRef.current.clear();
     setRatings({ actitud: { sum: 0, count: 0 }, ganas: { sum: 0, count: 0 }, voz: { sum: 0, count: 0 } });
 
-    const shuffled = [...players].sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, currentRound.type);
+    turnSerialRef.current += 1;
+    const turnNumber = turnSerialRef.current;
+    const selected = [...players]
+      .map((player) => ({ player, random: Math.random(), stat: singerStats[player] || { count: 0, lastTurn: -999 } }))
+      .sort((a, b) => {
+        const recencyA = Math.max(0, 3 - (turnNumber - a.stat.lastTurn));
+        const recencyB = Math.max(0, 3 - (turnNumber - b.stat.lastTurn));
+        const scoreA = a.stat.count * 10 + recencyA * 3;
+        const scoreB = b.stat.count * 10 + recencyB * 3;
+        return scoreA - scoreB || a.random - b.random;
+      })
+      .slice(0, currentRound.type)
+      .map(({ player }) => player);
+
+    setSingerStats((prev) => {
+      const next = { ...prev };
+      selected.forEach((player) => {
+        const stat = next[player] || { count: 0, lastTurn: -999 };
+        next[player] = { count: stat.count + 1, lastTurn: turnNumber };
+      });
+      return next;
+    });
     
     const captainIdx = players.indexOf(selected[0]);
     const sliceAngle = 360 / players.length;
@@ -250,6 +401,9 @@ export default function KaraokeRoulette() {
   };
 
   const saveScoreAndContinue = () => {
+    if (savedScoresRef.current.has(ratingKey)) return;
+    savedScoresRef.current.add(ratingKey);
+
     const avgActitud = ratings.actitud.count > 0 ? Math.round(ratings.actitud.sum / ratings.actitud.count) : 0;
     const avgGanas = ratings.ganas.count > 0 ? Math.round(ratings.ganas.sum / ratings.ganas.count) : 0;
     const avgVoz = ratings.voz.count > 0 ? Math.round(ratings.voz.sum / ratings.voz.count) : 0;
@@ -334,10 +488,27 @@ export default function KaraokeRoulette() {
               Mati&apos;s Fest
             </h1>
             
-            <div className="flex justify-center gap-4 mb-12">
+            <div className="flex flex-col lg:flex-row justify-center items-center gap-4 mb-12">
                 <div className="bg-white/10 backdrop-blur-md px-10 py-4 rounded-3xl border border-white/20 shadow-xl flex items-center">
                     <span className="text-xl text-zinc-300 font-bold uppercase tracking-widest">Código Sala: <strong className="text-indigo-400 text-3xl ml-2">{roomCode}</strong></span>
                 </div>
+
+                {joinUrl && (
+                  <div className="bg-white text-black p-3 rounded-3xl shadow-xl flex items-center gap-3">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=112x112&margin=8&data=${encodeURIComponent(joinUrl)}`}
+                      alt={`QR para entrar a la sala ${roomCode}`}
+                      className="w-28 h-28 rounded-2xl"
+                    />
+                    <div className="text-left pr-2 max-w-[220px]">
+                      <div className="flex items-center gap-2 text-zinc-900 font-black uppercase tracking-widest text-xs mb-1">
+                        <QrCode className="w-4 h-4" />
+                        Entrar con QR
+                      </div>
+                      <p className="text-zinc-600 text-xs font-bold break-all">{joinUrl}</p>
+                    </div>
+                  </div>
+                )}
                 
                 <button onClick={() => setShowSongList(true)} className="bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-400/30 px-6 py-4 rounded-3xl transition-colors shadow-xl flex items-center gap-3">
                     <Music className="w-6 h-6 text-indigo-300" />
@@ -347,9 +518,23 @@ export default function KaraokeRoulette() {
                 <button onClick={() => setStep("ADMIN")} className="bg-white/10 hover:bg-white/20 border border-white/20 px-6 py-4 rounded-3xl transition-colors shadow-xl flex items-center gap-2">
                     <Settings className="w-6 h-6 text-zinc-300" />
                 </button>
+
+                <button onClick={() => resetShow(false)} className="bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 px-6 py-4 rounded-3xl transition-colors shadow-xl flex items-center gap-2" title="Reiniciar sala completa">
+                    <RotateCcw className="w-6 h-6 text-red-300" />
+                </button>
             </div>
 
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-10 rounded-[2rem] shadow-2xl mb-10">
+              <div className="flex justify-center gap-4 mb-8 text-zinc-300">
+                <div className="flex items-center gap-2 bg-black/30 border border-white/10 px-4 py-2 rounded-2xl">
+                  <Users className="w-5 h-5 text-indigo-300" />
+                  <span className="font-black uppercase tracking-widest">{players.length} jugadores</span>
+                </div>
+                <div className="bg-black/30 border border-white/10 px-4 py-2 rounded-2xl font-black uppercase tracking-widest">
+                  {currentRound.name}
+                </div>
+              </div>
+
               <form onSubmit={handleAddPlayer} className="flex gap-4 mb-10">
                 <input
                   type="text"
@@ -426,7 +611,7 @@ export default function KaraokeRoulette() {
                       <>
                         Seleccionado: 
                         <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/20">
-                           <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[currentSingers[0]] || "Felix"}`} className="w-full h-full object-cover bg-black/40"/>
+                           <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[currentSingers[0]] || "Felix"}`} alt={`Avatar de ${currentSingers[0]}`} className="w-full h-full object-cover bg-black/40"/>
                         </div>
                         <span className="uppercase">{currentSingers[0]}</span>
                       </>
@@ -458,7 +643,7 @@ export default function KaraokeRoulette() {
                     <div key={i} className="absolute w-full h-full" style={{ transform: `rotate(${rotation}deg)` }}>
                       <div className="absolute top-0 left-1/2 -translate-x-1/2 pt-8 origin-bottom h-1/2 flex flex-col items-center">
                         <div className="w-12 h-12 mb-2 rounded-full border-2 border-black bg-white/10 shadow-lg p-1 overflow-hidden">
-                            <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[player] || "Felix"}`} className="w-full h-full"/>
+                            <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[player] || "Felix"}`} alt={`Avatar de ${player}`} className="w-full h-full"/>
                         </div>
                         <span className="font-black text-3xl text-white drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] uppercase">{player}</span>
                       </div>
@@ -479,7 +664,7 @@ export default function KaraokeRoulette() {
                     {currentSingers.slice(1).map((partner, i) => (
                       <span key={i} className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full overflow-hidden border border-white/20">
-                           <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[partner] || "Felix"}`} className="w-full h-full object-cover bg-black/40"/>
+                           <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[partner] || "Felix"}`} alt={`Avatar de ${partner}`} className="w-full h-full object-cover bg-black/40"/>
                         </div>
                         <span className="uppercase">{partner}</span>
                       </span>
@@ -585,6 +770,17 @@ export default function KaraokeRoulette() {
                     <ListOrdered className="w-10 h-10 text-indigo-400" />
                     <h2 className="text-5xl font-black text-white tracking-tighter">Ranking del Terror</h2>
                  </div>
+
+                 {isTournamentDone && champion && (
+                   <div className="bg-yellow-400 text-black rounded-[3rem] p-8 mb-8 shadow-[0_0_50px_rgba(250,204,21,0.35)] border border-yellow-200">
+                     <div className="flex items-center justify-center gap-3 mb-3">
+                       <Trophy className="w-10 h-10" />
+                       <span className="font-black uppercase tracking-widest text-sm">Ganador del show</span>
+                     </div>
+                     <h3 className="text-5xl font-black uppercase tracking-tight">{champion.singers.join(" & ")}</h3>
+                     <p className="font-black text-2xl mt-2">{champion.total} puntos</p>
+                   </div>
+                 )}
                  
                  <div className="bg-white/5 backdrop-blur-xl rounded-[3rem] border border-white/10 overflow-hidden mb-12 shadow-2xl">
                      <table className="w-full text-left">
@@ -598,7 +794,7 @@ export default function KaraokeRoulette() {
                              </tr>
                          </thead>
                          <tbody className="divide-y divide-white/5">
-                             {[...leaderboard].sort((a,b) => b.total - a.total).map((entry, i) => (
+                             {sortedLeaderboard.map((entry, i) => (
                                  <tr key={i} className="hover:bg-white/5 transition-colors">
                                      <td className="p-8 font-bold text-2xl text-white flex items-center gap-4">
                                         {i === 0 && <Trophy className="w-8 h-8 text-yellow-500" />}
@@ -607,7 +803,7 @@ export default function KaraokeRoulette() {
                                         <div className="flex -space-x-4">
                                           {entry.singers.map((s, idx) => (
                                               <div key={idx} className="w-12 h-12 rounded-full overflow-hidden border-2 border-zinc-800 bg-white/10" title={s}>
-                                                  <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[s] || "Felix"}`} className="w-full h-full object-cover" />
+                                                  <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatars[s] || "Felix"}`} alt={`Avatar de ${s}`} className="w-full h-full object-cover" />
                                               </div>
                                           ))}
                                         </div>
@@ -624,8 +820,8 @@ export default function KaraokeRoulette() {
                          </tbody>
                      </table>
                  </div>
-                 <button onClick={startRoulette} className="bg-white text-black py-6 px-16 rounded-[2rem] font-black text-3xl shadow-[0_0_40px_rgba(255,255,255,0.4)] hover:scale-105 transition-transform tracking-widest">
-                    {currentRoundIdx === TOURNAMENT_ROUNDS.length - 1 && currentTurn === currentRound.totalTurns ? "FINALIZAR SHOW" : "SIGUIENTE TURNO"}
+                 <button onClick={() => isTournamentDone ? resetShow(true) : startRoulette()} className="bg-white text-black py-6 px-16 rounded-[2rem] font-black text-3xl shadow-[0_0_40px_rgba(255,255,255,0.4)] hover:scale-105 transition-transform tracking-widest">
+                    {isTournamentDone ? "NUEVA PARTIDA" : "SIGUIENTE TURNO"}
                  </button>
             </motion.div>
         )}

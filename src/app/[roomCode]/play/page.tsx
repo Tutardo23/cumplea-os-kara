@@ -3,42 +3,84 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Star, CheckCircle2, Loader2, Music, Mic2, Flame } from "lucide-react";
+import { Star, CheckCircle2, Loader2, Music, Mic2, Flame, Wifi, WifiOff, LogOut } from "lucide-react";
 
 // Nombres base para generar los robots aleatorios
 const AVATAR_SEEDS = ["Felix", "Aneka", "Jude", "Loki", "Mimi", "Buster", "Salem", "Mittens", "Jasper", "Bandit", "Gizmo", "Simon"];
+const normalizePlayerName = (value: string) => value.trim().replace(/\s+/g, " ");
+type SongOption = { id: string; title: string; artist: string; youtubeId?: string };
+type RemoteState = { step?: string; votingKey?: string; ratingKey?: string; currentOptions?: SongOption[]; currentSingers?: string[] };
+type SavedPlayerSession = { savedName?: string; savedAvatar?: string };
 
 export default function MobileController() {
   const params = useParams();
   const roomCode = params.roomCode as string;
+  const savedSession = (() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(`karaoke_vip_${roomCode}`);
+      return raw ? JSON.parse(raw) as SavedPlayerSession : null;
+    } catch {
+      return null;
+    }
+  })();
   
-  const [name, setName] = useState("");
-  const [avatar, setAvatar] = useState(AVATAR_SEEDS[0]);
-  const [joined, setJoined] = useState(false);
+  const [name, setName] = useState(savedSession?.savedName ? normalizePlayerName(savedSession.savedName) : "");
+  const [avatar, setAvatar] = useState(savedSession?.savedAvatar || AVATAR_SEEDS[0]);
+  const [joined, setJoined] = useState(Boolean(savedSession?.savedName));
   const [isConnected, setIsConnected] = useState(false);
   
   const [currentStep, setCurrentStep] = useState<string>("LOBBY");
   const [hasVoted, setHasVoted] = useState(false);
   const [ratedCategories, setRatedCategories] = useState<string[]>([]);
+  const [votingKey, setVotingKey] = useState("");
+  const [ratingKey, setRatingKey] = useState("");
+  const [currentOptions, setCurrentOptions] = useState<SongOption[]>([]);
+  const [currentSingers, setCurrentSingers] = useState<string[]>([]);
   
-  const channelRef = useRef<any>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const nameRef = useRef("");
 
-  // 1. RECUPERAR SESIÓN DE FORMA SEGURA (ANTI-CRASH CELULAR)
   useEffect(() => {
-    try {
-      const savedSession = window.localStorage.getItem(`karaoke_vip_${roomCode}`);
-      if (savedSession) {
-        const { savedName, savedAvatar } = JSON.parse(savedSession);
-        if (savedName) {
-            setName(savedName);
-            setAvatar(savedAvatar || AVATAR_SEEDS[0]);
-            setJoined(true);
-        }
-      }
-    } catch (e) {
-      console.warn("El celular bloqueó el acceso a la memoria (Incógnito/iOS)");
+    nameRef.current = name;
+  }, [name]);
+
+  const voteStorageKey = (key: string, playerName = nameRef.current) => `karaoke_vote_${roomCode}_${key}_${playerName.toLowerCase()}`;
+  const ratingStorageKey = (key: string, category: string, playerName = nameRef.current) => `karaoke_rating_${roomCode}_${key}_${playerName.toLowerCase()}_${category}`;
+
+  const applyRemoteState = (payload: RemoteState) => {
+    if (!payload?.step) return;
+
+    setCurrentStep(payload.step);
+    if (payload.votingKey) {
+      setVotingKey(payload.votingKey);
     }
-  }, [roomCode]);
+    if (payload.ratingKey) {
+      setRatingKey(payload.ratingKey);
+    }
+    if (Array.isArray(payload.currentOptions)) {
+      setCurrentOptions(payload.currentOptions);
+    }
+    if (Array.isArray(payload.currentSingers)) {
+      setCurrentSingers(payload.currentSingers);
+    }
+
+    if (payload.step === "VOTING") {
+      const key = payload.votingKey || "";
+      const alreadyVoted = key ? window.localStorage.getItem(voteStorageKey(key)) === "1" : false;
+      setHasVoted(alreadyVoted);
+    } else {
+      setHasVoted(false);
+    }
+
+    if (payload.step === "RATING") {
+      const key = payload.ratingKey || "";
+      const categories = ["actitud", "ganas", "voz"].filter((category) => (
+        key ? window.localStorage.getItem(ratingStorageKey(key, category)) === "1" : false
+      ));
+      setRatedCategories(categories);
+    }
+  };
 
   // 2. CONEXIÓN WEB SOCKET CON RECONEXIÓN
   useEffect(() => {
@@ -47,12 +89,16 @@ export default function MobileController() {
     
     channel
       .on("broadcast", { event: "sync_step" }, (data) => {
-        setCurrentStep(data.payload.step);
-        if (data.payload.step === "VOTING") setHasVoted(false);
-        if (data.payload.step === "RATING") setRatedCategories([]);
+        applyRemoteState(data.payload);
+      })
+      .on("broadcast", { event: "sync_state" }, (data) => {
+        applyRemoteState(data.payload);
       })
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED') setIsConnected(true);
+        if (status === 'SUBSCRIBED') {
+          setIsConnected(true);
+          channel.send({ type: "broadcast", event: "request_sync", payload: { playerName: nameRef.current } });
+        }
         if (status === 'CLOSED' || status === 'CHANNEL_ERROR') setIsConnected(false);
       });
 
@@ -67,19 +113,32 @@ export default function MobileController() {
     if (joined && isConnected && name) {
       try {
         channelRef.current?.send({ type: "broadcast", event: "new_player", payload: { name, avatar } });
+        channelRef.current?.send({ type: "broadcast", event: "request_sync", payload: { playerName: name } });
       } catch (e) {}
     }
   }, [joined, isConnected, name, avatar]);
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !isConnected) return;
+    const normalizedName = normalizePlayerName(name);
+    if (!normalizedName || !isConnected) return;
     
     try {
-      window.localStorage.setItem(`karaoke_vip_${roomCode}`, JSON.stringify({ savedName: name, savedAvatar: avatar }));
+      window.localStorage.setItem(`karaoke_vip_${roomCode}`, JSON.stringify({ savedName: normalizedName, savedAvatar: avatar }));
     } catch (e) {}
     
+    setName(normalizedName);
     setJoined(true);
+  };
+
+  const leavePlayer = () => {
+    try {
+      window.localStorage.removeItem(`karaoke_vip_${roomCode}`);
+    } catch {}
+    setJoined(false);
+    setName("");
+    setHasVoted(false);
+    setRatedCategories([]);
   };
 
   // 4. VOTAR SEGURO ANTI-CRASH
@@ -90,6 +149,7 @@ export default function MobileController() {
         setHasVoted(true); // Bloqueo de UI
         if (channelRef.current) {
             await channelRef.current.send({ type: "broadcast", event: "vote", payload: { songNum, playerName: name } });
+            if (votingKey) window.localStorage.setItem(voteStorageKey(votingKey, name), "1");
         }
     } catch (error) {
         console.error("Error enviando voto", error);
@@ -106,6 +166,7 @@ export default function MobileController() {
         setRatedCategories(prev => [...prev, category]);
         if (channelRef.current) {
             await channelRef.current.send({ type: "broadcast", event: "rate", payload: { category, score, playerName: name } });
+            if (ratingKey) window.localStorage.setItem(ratingStorageKey(ratingKey, category, name), "1");
         }
     } catch (error) {
         setRatedCategories(prev => prev.filter(c => c !== category));
@@ -161,8 +222,17 @@ export default function MobileController() {
             <div className="w-12 h-12 bg-white/10 rounded-full p-1 border border-indigo-500/50">
                <img src={`https://api.dicebear.com/8.x/bottts-neutral/svg?seed=${avatar}`} alt="avatar" className="w-full h-full" />
             </div>
-            <span className="font-black text-xl uppercase tracking-widest text-zinc-200">{name}</span>
+            <div className="min-w-0">
+              <span className="block font-black text-xl uppercase tracking-widest text-zinc-200 truncate">{name}</span>
+              <span className={`flex items-center gap-1 text-xs font-bold uppercase tracking-widest ${isConnected ? "text-green-400" : "text-red-400"}`}>
+                {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                {isConnected ? "Conectado" : "Reconectando"}
+              </span>
+            </div>
          </div>
+         <button onClick={leavePlayer} className="p-3 rounded-xl bg-white/5 border border-white/10 text-zinc-400 active:scale-95">
+           <LogOut className="w-5 h-5" />
+         </button>
       </div>
 
       {currentStep === "LOBBY" || currentStep === "ADMIN" || currentStep === "ROULETTE" || currentStep === "PLAYING" || currentStep === "LEADERBOARD" ? (
@@ -178,11 +248,15 @@ export default function MobileController() {
           <h2 className="text-4xl font-black mb-8 text-center text-white">¡Elegí el Tema!</h2>
           {!hasVoted ? (
             <div className="flex flex-col gap-4">
-              <button onClick={() => sendVote(1)} className="w-full bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500 py-12 rounded-[2rem] text-3xl font-black active:scale-95 transition-all text-indigo-100 shadow-[0_0_30px_rgba(99,102,241,0.2)]">
-                OPCIÓN 1
+              <button onClick={() => sendVote(1)} className="w-full bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500 p-8 rounded-[2rem] active:scale-95 transition-all text-indigo-100 shadow-[0_0_30px_rgba(99,102,241,0.2)] text-left">
+                <span className="block text-xs font-black uppercase tracking-widest text-indigo-300 mb-3">Opción 1</span>
+                <span className="block text-2xl font-black leading-tight">{currentOptions[0]?.title || "OPCIÓN 1"}</span>
+                {currentOptions[0]?.artist && <span className="block text-base font-bold text-indigo-200/70 mt-2">{currentOptions[0].artist}</span>}
               </button>
-              <button onClick={() => sendVote(2)} className="w-full bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500 py-12 rounded-[2rem] text-3xl font-black active:scale-95 transition-all text-purple-100 shadow-[0_0_30px_rgba(168,85,247,0.2)]">
-                OPCIÓN 2
+              <button onClick={() => sendVote(2)} className="w-full bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500 p-8 rounded-[2rem] active:scale-95 transition-all text-purple-100 shadow-[0_0_30px_rgba(168,85,247,0.2)] text-left">
+                <span className="block text-xs font-black uppercase tracking-widest text-purple-300 mb-3">Opción 2</span>
+                <span className="block text-2xl font-black leading-tight">{currentOptions[1]?.title || "OPCIÓN 2"}</span>
+                {currentOptions[1]?.artist && <span className="block text-base font-bold text-purple-200/70 mt-2">{currentOptions[1].artist}</span>}
               </button>
             </div>
           ) : (
@@ -197,6 +271,11 @@ export default function MobileController() {
       {currentStep === "RATING" && (
         <div className="w-full max-w-md space-y-4 mt-16">
           <h2 className="text-3xl font-black mb-6 text-center text-yellow-400 drop-shadow-[0_0_15px_rgba(250,204,21,0.5)]">JURADO VIP</h2>
+          {currentSingers.length > 0 && (
+            <p className="text-center text-zinc-300 font-black uppercase tracking-widest -mt-3 mb-6">
+              {currentSingers.join(" & ")}
+            </p>
+          )}
           
           {[
             { key: "actitud", label: "Actitud en Escenario", icon: Flame },
