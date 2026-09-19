@@ -2,88 +2,64 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mic2, Tv, Smartphone } from "lucide-react";
+import { Mic2, Smartphone, Tv, Zap } from "lucide-react";
 
 export default function Home() {
   const router = useRouter();
   const [roomCode, setRoomCode] = useState("");
 
   const createRoom = () => {
-    const code = `KARA-${Math.floor(1000 + Math.random() * 9000)}`;
+    const code = `MACHI-${Math.floor(1000 + Math.random() * 9000)}`;
     router.push(`/${code}/screen`);
   };
 
-  const joinRoom = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (roomCode.trim()) {
-      router.push(`/${roomCode.trim().toUpperCase()}/play`);
-    }
+  const joinRoom = (event: React.FormEvent) => {
+    event.preventDefault();
+    const code = roomCode.trim().toUpperCase();
+    if (code) router.push(`/${code}/play`);
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white p-4 font-sans selection:bg-indigo-500/30">
-      <div className="absolute inset-0 z-[-1] overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-indigo-600/20 rounded-full blur-[100px]"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-purple-600/20 rounded-full blur-[100px]"></div>
-      </div>
-
-      <div className="w-full max-w-md z-10">
-        <div className="text-center mb-12">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white/5 border border-white/10 mb-6 shadow-2xl shadow-indigo-500/20">
-            <Mic2 className="w-10 h-10 text-indigo-400" strokeWidth={1.5} />
-          </div>
-          <h1 className="text-5xl font-black tracking-tight mb-2 text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
-            Karaoke VIP
-          </h1>
-          <p className="text-zinc-400 font-medium">¿Vas a crear la sala o vas a jugar?</p>
-        </div>
-
-        <div className="space-y-6">
-          {/* SECCIÓN JUGADORES */}
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-3xl shadow-xl">
-            <div className="flex items-center gap-3 mb-6">
-              <Smartphone className="w-6 h-6 text-purple-400" />
-              <h2 className="text-2xl font-bold">Unirse a una Sala</h2>
+    <main className="party-bg party-grid relative min-h-screen overflow-hidden px-5 py-10 sm:px-8">
+      <div className="pointer-events-none absolute inset-x-0 top-[14%] h-16 -rotate-2 bg-[var(--boca-yellow)] opacity-90" />
+      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl items-center">
+        <div className="grid w-full gap-10 lg:grid-cols-[1.1fr_.9fr] lg:items-center">
+          <section>
+            <div className="mb-7 inline-flex items-center gap-3 border border-[var(--boca-yellow)]/35 bg-[var(--boca-yellow)]/8 px-4 py-2 text-xs font-black uppercase tracking-[.22em] text-[var(--boca-yellow)]">
+              <Zap className="h-4 w-4" /> Birthday control system
             </div>
-            <form onSubmit={joinRoom} className="flex flex-col gap-4">
-              <input
-                type="text"
-                value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value)}
-                placeholder="Ej: KARA-1234"
-                className="bg-black/40 border border-white/10 p-4 rounded-xl text-xl outline-none focus:border-purple-500 transition-colors text-white uppercase text-center font-bold tracking-widest placeholder:normal-case placeholder:tracking-normal placeholder:font-normal placeholder:text-zinc-600"
-              />
-              <button 
-                type="submit"
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-4 rounded-xl font-bold text-xl active:scale-95 transition-all shadow-lg shadow-purple-500/30"
-              >
-                Entrar a jugar
-              </button>
+            <h1 className="font-display max-w-3xl text-[clamp(4.3rem,11vw,9.5rem)] font-black uppercase leading-[.78] tracking-[-.035em] text-white">
+              Machi&apos;s <span className="text-[var(--boca-yellow)]">Night</span>
+            </h1>
+            <p className="mt-7 max-w-xl text-base font-medium leading-7 text-white/62 sm:text-lg">Karaoke, minijuegos y controles móviles en tiempo real. La pantalla dirige el show; cada teléfono participa.</p>
+            <div className="mt-8 flex flex-wrap gap-3 text-xs font-black uppercase tracking-[.14em] text-white/58">
+              <span className="border border-white/12 bg-white/5 px-4 py-2">Sin cuentas</span>
+              <span className="border border-white/12 bg-white/5 px-4 py-2">Entrada por QR</span>
+              <span className="border border-white/12 bg-white/5 px-4 py-2">Tiempo real</span>
+            </div>
+          </section>
+
+          <section className="screen-card border-t-4 border-t-[var(--boca-yellow)] p-5 sm:p-7">
+            <div className="mb-7 flex items-center gap-3">
+              <div className="grid h-12 w-12 place-items-center bg-[var(--boca-yellow)] text-[var(--boca-blue)]"><Mic2 className="h-6 w-6" /></div>
+              <div>
+                <p className="eyebrow">Entrar rápido</p>
+                <h2 className="font-display text-3xl font-black uppercase">Elegí tu lado</h2>
+              </div>
+            </div>
+
+            <form onSubmit={joinRoom} className="border border-white/10 bg-black/15 p-5">
+              <div className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-[.12em]"><Smartphone className="h-5 w-5 text-[var(--boca-yellow)]" /> Invitado</div>
+              <input className="field text-center text-lg font-black uppercase tracking-[.18em]" value={roomCode} onChange={(e) => setRoomCode(e.target.value)} placeholder="MACHI-1234" />
+              <button className="primary-button mt-3 w-full justify-center" type="submit">Entrar a jugar</button>
             </form>
-          </div>
 
-          <div className="flex items-center gap-4 px-4">
-            <div className="h-px bg-white/10 flex-1"></div>
-            <span className="text-zinc-500 font-bold uppercase text-xs tracking-widest">Opción Host</span>
-            <div className="h-px bg-white/10 flex-1"></div>
-          </div>
+            <div className="my-5 flex items-center gap-3 text-[10px] font-black uppercase tracking-[.22em] text-white/30"><span className="h-px flex-1 bg-white/10" /> Host <span className="h-px flex-1 bg-white/10" /></div>
 
-          {/* SECCIÓN HOST */}
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-3xl shadow-xl text-center">
-             <div className="flex items-center justify-center gap-3 mb-4">
-              <Tv className="w-6 h-6 text-indigo-400" />
-              <h2 className="text-xl font-bold">Pantalla Gigante</h2>
-            </div>
-            <p className="text-zinc-400 mb-6 text-sm">Creá la sala principal para mostrar en el televisor.</p>
-            <button 
-              onClick={createRoom}
-              className="w-full bg-white/10 hover:bg-white/20 border border-white/10 text-white p-4 rounded-xl font-bold text-lg active:scale-95 transition-all"
-            >
-              Iniciar Host
-            </button>
-          </div>
+            <button type="button" onClick={createRoom} className="secondary-button w-full justify-center"><Tv className="h-5 w-5 text-[var(--boca-yellow)]" /> Crear pantalla principal</button>
+          </section>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

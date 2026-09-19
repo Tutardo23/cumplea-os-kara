@@ -1,33 +1,27 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Barlow_Condensed, Inter } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const display = Barlow_Condensed({
   subsets: ["latin"],
+  variable: "--font-display",
+  weight: ["600", "700", "800", "900"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const body = Inter({
   subsets: ["latin"],
+  variable: "--font-body",
 });
 
 export const metadata: Metadata = {
-  title: "Karaoke VIP",
-  description: "Ruleta de karaoke para jugar con pantalla grande y celulares.",
+  title: "Machi's Night",
+  description: "Karaoke, minijuegos y controles móviles en tiempo real para el cumpleaños de Machi.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html
-      lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="es" className={`${display.variable} ${body.variable}`}>
+      <body>{children}</body>
     </html>
   );
 }
