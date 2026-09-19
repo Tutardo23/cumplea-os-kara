@@ -1,13 +1,9 @@
 import { attachDatabasePool, upgradeWebSocket } from "@neon/functions";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Pool } from "pg";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
 attachDatabasePool(pool);
 
-const BUCKET = "karaoke-assets";
-const s3 = new S3Client({ forcePathStyle: true });
 
 type LiveClient = {
   socket: WebSocket;
@@ -123,6 +119,8 @@ async function pollEvents() {
   try {
     await ensureEventCursor();
 
+    const cursor = eventCursor ?? 0;
+
     const { rows } = await pool.query<{
       id: string;
       room_code: string;
@@ -134,11 +132,11 @@ async function pollEvents() {
        where id > $1
        order by id asc
        limit 500`,
-      [eventCursor],
+      [cursor],
     );
 
     for (const event of rows) {
-      eventCursor = Math.max(eventCursor, Number(event.id));
+      eventCursor = Math.max(eventCursor ?? 0, Number(event.id));
       for (const client of clients) {
         if (client.room === event.room_code) send(client, event.event_type, event.payload);
       }
@@ -209,7 +207,7 @@ async function handleSocket(request: Request) {
     })();
   });
 
-  socket.addEventListener("message", (event) => {
+  socket.addEventListener("message", (event: MessageEvent) => {
     if (typeof event.data !== "string") return;
     void (async () => {
       let message: WireMessage;
@@ -324,29 +322,6 @@ async function deleteSong(songId?: string | null) {
   await pool.query("delete from karaoke_songs");
 }
 
-function publicObjectUrl(key: string) {
-  const endpoint = (process.env.AWS_ENDPOINT_URL_S3 ?? "").replace(/\/$/, "");
-  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
-  return `${endpoint}/${BUCKET}/${encodedKey}`;
-}
-
-async function createUploadUrl(request: Request) {
-  const body = await request.json() as { filename?: string; contentType?: string };
-  const original = String(body.filename ?? "audio.mp3");
-  const safe = original.replace(/[^a-zA-Z0-9._-]/g, "-").slice(-100) || "audio.mp3";
-  const contentType = String(body.contentType ?? "audio/mpeg");
-  if (!contentType.startsWith("audio/")) return json({ error: "Solo se permiten archivos de audio." }, 400);
-
-  const key = `uploads/${Date.now()}-${crypto.randomUUID()}-${safe}`;
-  const uploadUrl = await getSignedUrl(
-    s3,
-    new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType, CacheControl: "public, max-age=31536000, immutable" }),
-    { expiresIn: 900 },
-  );
-
-  return json({ uploadUrl, publicUrl: publicObjectUrl(key), key });
-}
-
 async function handleHttp(request: Request) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   const url = new URL(request.url);
@@ -369,14 +344,6 @@ async function handleHttp(request: Request) {
     return json({ ok: true, songs: await getSongs() });
   }
 
-  if (path.endsWith("/upload-url") && request.method === "POST") return createUploadUrl(request);
-
-  if (path.endsWith("/asset-url") && request.method === "GET") {
-    const key = url.searchParams.get("key");
-    if (!key) return json({ error: "key required" }, 400);
-    const downloadUrl = await getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: key }), { expiresIn: 3600 });
-    return json({ downloadUrl });
-  }
 
   return json({ error: "Not found" }, 404);
 }

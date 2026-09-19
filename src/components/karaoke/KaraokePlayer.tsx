@@ -2,24 +2,8 @@
 
 import YouTube from "react-youtube";
 import type { Song } from "@/types/game";
-import { SyncedLyricsPlayer } from "./SyncedLyricsPlayer";
 
 export function KaraokePlayer({ song, onEnded }: { song: Song; onEnded?: () => void }) {
-  if (song.source.type === "audio") {
-    return (
-      <SyncedLyricsPlayer
-        audioUrl={song.source.audioUrl}
-        lyricsLrc={song.source.lyricsLrc}
-        title={song.title}
-        artist={song.artist}
-        defaultVocalReduction={song.source.vocalReduction}
-        visualVideoId={song.source.visualVideoId}
-        visualOffset={song.source.visualOffset}
-        onEnded={onEnded}
-      />
-    );
-  }
-
   return (
     <div className="relative h-full min-h-[520px] w-full overflow-hidden bg-black">
       <YouTube

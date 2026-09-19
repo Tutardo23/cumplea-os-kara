@@ -422,13 +422,14 @@ export default function PartyScreen() {
 
   const chooseMode = useCallback((): KaraokeMode => {
     const last = history.at(-1);
-    const pool: Array<{ mode: KaraokeMode; weight: number }> = [
+    const candidates: Array<{ mode: KaraokeMode; weight: number }> = [
       { mode: "EXPRESS", weight: 36 },
       { mode: "DUO", weight: players.length >= 3 ? 20 : 0 },
       { mode: "BOMB", weight: 20 },
       { mode: "RESCUE", weight: players.length >= 3 ? 14 : 0 },
       { mode: "DUEL", weight: players.length >= 4 ? 10 : 0 },
-    ].filter((item) => item.weight > 0 && item.mode !== last);
+    ];
+    const pool = candidates.filter((item) => item.weight > 0 && item.mode !== last);
     const total = pool.reduce((sum, item) => sum + item.weight, 0);
     let roll = Math.random() * total;
     return pool.find((item) => {
