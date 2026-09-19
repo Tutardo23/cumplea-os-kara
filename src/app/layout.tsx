@@ -13,8 +13,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Karaoke VIP",
-  description: "Ruleta de karaoke para jugar con pantalla grande y celulares.",
+  title: {
+    default: "Machi's Night",
+    template: "%s | Machi's Night",
+  },
+  description: "Una experiencia de fiesta interactiva con pantalla grande y celulares como controles.",
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 export default function RootLayout({
@@ -27,7 +34,7 @@ export default function RootLayout({
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full">{children}</body>
     </html>
   );
 }
